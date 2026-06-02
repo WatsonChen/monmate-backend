@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
-    "build": "npx esbuild api/index.ts --bundle --platform=node --target=node20 --outfile=api/bundle.js --external:@prisma/client --external:.prisma/client && npx prisma generate",
+    "build": "npx esbuild api/index.ts --bundle --platform=node --target=node20 --outfile=api/bundle.js --external:@prisma/client --external:.prisma/client --external:@aws-sdk/client-s3 && npx prisma generate",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate",
