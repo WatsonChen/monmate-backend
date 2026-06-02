@@ -1,8 +1,10 @@
 import bcrypt from "bcryptjs";
+import { OAuth2Client } from "google-auth-library";
 import jwt from "jsonwebtoken";
 import type { SignOptions } from "jsonwebtoken";
 import { env } from "../config/env";
 import { AppError } from "../lib/http";
+import { prisma } from "../lib/prisma";
 import { userRepository } from "../repositories/user.repository";
 
 export const authService = {
@@ -11,6 +13,63 @@ export const authService = {
 
     if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
       throw new AppError(401, "INVALID_CREDENTIALS", "帳號或密碼錯誤");
+    }
+
+    const signOptions: SignOptions = {
+      subject: user.id,
+      expiresIn: env.JWT_EXPIRES_IN as SignOptions["expiresIn"]
+    };
+
+    const token = jwt.sign(
+      { email: user.email, role: user.role },
+      env.JWT_SECRET,
+      signOptions
+    );
+
+    return {
+      token,
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        eventCredits: user.eventCredits
+      }
+    };
+  },
+
+  async googleLogin(credential: string) {
+    if (!env.GOOGLE_CLIENT_ID) {
+      throw new AppError(503, "GOOGLE_AUTH_DISABLED", "Google 登入未啟用");
+    }
+
+    const client = new OAuth2Client(env.GOOGLE_CLIENT_ID);
+    let googlePayload;
+
+    try {
+      const ticket = await client.verifyIdToken({
+        idToken: credential,
+        audience: env.GOOGLE_CLIENT_ID
+      });
+      googlePayload = ticket.getPayload();
+    } catch {
+      throw new AppError(401, "GOOGLE_TOKEN_INVALID", "Google 登入憑證無效");
+    }
+
+    if (!googlePayload?.email) {
+      throw new AppError(400, "GOOGLE_EMAIL_MISSING", "Google 帳號無法取得 email");
+    }
+
+    let user = await userRepository.findByEmail(googlePayload.email);
+
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          email: googlePayload.email,
+          name: googlePayload.name ?? googlePayload.email.split("@")[0],
+          passwordHash: "google-oauth"
+        }
+      });
     }
 
     const signOptions: SignOptions = {

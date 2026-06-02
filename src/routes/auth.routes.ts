@@ -21,6 +21,15 @@ authRouter.post(
   })
 );
 
+authRouter.post(
+  "/google",
+  asyncHandler(async (req, res) => {
+    const { credential } = z.object({ credential: z.string().min(1) }).parse(req.body);
+    const result = await authService.googleLogin(credential);
+    return ok(res, result);
+  })
+);
+
 authRouter.post("/logout", (_req, res) => {
   return ok(res, { loggedOut: true });
 });
