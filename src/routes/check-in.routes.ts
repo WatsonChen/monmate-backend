@@ -1,0 +1,49 @@
+import { Router } from "express";
+import { z } from "zod";
+import { asyncHandler } from "../lib/async-handler";
+import { ok } from "../lib/http";
+import { requireAuth } from "../middlewares/auth";
+import { checkInService } from "../services/check-in.service";
+
+export const checkInRouter = Router({ mergeParams: true });
+
+const qrSchema = z.object({
+  qrToken: z.string().min(1)
+});
+
+const manualSchema = z.object({
+  checkInCode: z.string().min(1)
+});
+
+checkInRouter.post(
+  "/qr",
+  asyncHandler(async (req, res) => {
+    const body = qrSchema.parse(req.body);
+    const result = await checkInService.byQrToken(
+      req.params.eventId,
+      body.qrToken
+    );
+    return ok(res, result);
+  })
+);
+
+checkInRouter.post(
+  "/manual",
+  asyncHandler(async (req, res) => {
+    const body = manualSchema.parse(req.body);
+    const result = await checkInService.byManualCode(
+      req.params.eventId,
+      body.checkInCode
+    );
+    return ok(res, result);
+  })
+);
+
+checkInRouter.get(
+  "/logs",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const logs = await checkInService.listLogs(req.params.eventId);
+    return ok(res, logs);
+  })
+);
