@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { CheckInLogStatus, CheckInStatus } from "@prisma/client";
+import { CheckInLogStatus, CheckInStatus, Gender } from "@prisma/client";
 import { toCsvCell } from "@monmate/utils";
 import readXlsxFile from "read-excel-file/node";
 import { AppError } from "../lib/http";
@@ -15,28 +15,47 @@ function createQrToken() {
   return randomBytes(18).toString("base64url");
 }
 
+function parseGender(value: string | null | undefined): Gender | undefined {
+  const v = String(value ?? "").trim().toUpperCase();
+  if (v === "M" || v === "男") return Gender.M;
+  if (v === "F" || v === "女") return Gender.F;
+  if (v === "OTHER" || v === "其他") return Gender.OTHER;
+  return undefined;
+}
+
 export const attendeeService = {
   list(eventId: string, search?: string, status?: CheckInStatus) {
     return attendeeRepository.list(eventId, search, status);
   },
 
-  async importFromExcel(eventId: string, fileBuffer: Buffer) {
-    const event = await eventService.get(eventId);
+  async getByQrToken(eventId: string, qrToken: string) {
+    const attendee = await prisma.attendee.findFirst({
+      where: { eventId, qrToken },
+      select: {
+        id: true, name: true, phone: true, email: true,
+        checkInCode: true, qrToken: true, checkInStatus: true, checkedInAt: true
+      }
+    });
+    if (!attendee) throw new AppError(404, "ATTENDEE_NOT_FOUND", "找不到報名資料");
+    return attendee;
+  },
+
+  async importFromExcel(eventId: string, fileBuffer: Buffer, userId: string) {
+    await eventService.get(eventId);
 
     const rows = await readXlsxFile(fileBuffer);
-    if (rows.length < 2) {
-      throw new AppError(400, "EMPTY_IMPORT", "匯入檔案沒有工作表");
-    }
+    if (rows.length < 2) throw new AppError(400, "EMPTY_IMPORT", "匯入檔案沒有資料");
 
-    const header = rows[0].map((cell) => String(cell ?? "").trim());
-    const nameIndex = header.findIndex((cell) =>
-      ["name", "姓名"].includes(cell)
-    );
-    const phoneIndex = header.findIndex((cell) =>
-      ["phone", "電話"].includes(cell)
-    );
+    const header = rows[0].map((cell) => String(cell ?? "").trim().toLowerCase());
+    const col = (names: string[]) => header.findIndex((h) => names.includes(h));
 
-    if (nameIndex < 0 || phoneIndex < 0) {
+    const nameIdx = col(["name", "姓名"]);
+    const phoneIdx = col(["phone", "電話", "手機"]);
+    const emailIdx = col(["email", "信箱"]);
+    const ageIdx = col(["age", "年齡"]);
+    const genderIdx = col(["gender", "性別"]);
+
+    if (nameIdx < 0 || phoneIdx < 0) {
       throw new AppError(400, "INVALID_COLUMNS", "Excel 需包含姓名與電話欄位");
     }
 
@@ -44,30 +63,38 @@ export const attendeeService = {
       .slice(1)
       .map((row, index) => ({
         eventId,
-        name: String(row[nameIndex] ?? "").trim(),
-        phone: String(row[phoneIndex] ?? "").trim(),
+        name: String(row[nameIdx] ?? "").trim(),
+        phone: String(row[phoneIdx] ?? "").trim(),
+        email: emailIdx >= 0 ? (String(row[emailIdx] ?? "").trim() || undefined) : undefined,
+        age: ageIdx >= 0 ? (Number(row[ageIdx]) || undefined) : undefined,
+        gender: genderIdx >= 0 ? parseGender(String(row[genderIdx] ?? "")) : undefined,
         checkInCode: createCheckInCode(index),
         qrToken: createQrToken()
       }))
       .filter((row) => row.name && row.phone);
 
-    if (attendees.length === 0) {
-      throw new AppError(400, "EMPTY_IMPORT", "匯入檔案缺少姓名或電話欄位");
-    }
+    if (attendees.length === 0) throw new AppError(400, "EMPTY_IMPORT", "沒有有效的報名資料");
 
-    if (event.attendeeLimit) {
-      const existingCount = await prisma.attendee.count({ where: { eventId } });
-      if (existingCount + attendees.length > event.attendeeLimit) {
+    await prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({ where: { id: userId }, select: { attendeeCredits: true } });
+      if (!user) throw new AppError(404, "USER_NOT_FOUND", "找不到使用者");
+      if (user.attendeeCredits < attendees.length) {
         throw new AppError(
           402,
-          "ATTENDEE_LIMIT_EXCEEDED",
-          `此活動額度最多支援 ${event.attendeeLimit} 人`
+          "INSUFFICIENT_ATTENDEE_CREDITS",
+          `報到人數額度不足。需要 ${attendees.length} 個額度，目前剩餘 ${user.attendeeCredits} 個。`
         );
       }
-    }
 
-    const result = await attendeeRepository.createMany(attendees);
-    return { imported: result.count };
+      await tx.user.update({
+        where: { id: userId },
+        data: { attendeeCredits: { decrement: attendees.length } }
+      });
+
+      await tx.attendee.createMany({ data: attendees });
+    });
+
+    return { imported: attendees.length };
   },
 
   async exportCsv(eventId: string) {
@@ -76,23 +103,20 @@ export const attendeeService = {
       where: { eventId, status: CheckInLogStatus.SUCCESS },
       orderBy: { createdAt: "desc" }
     });
-    const latestMethodByAttendee = new Map(
-      successLogs
-        .filter((log) => log.attendeeId)
-        .map((log) => [log.attendeeId, log.method])
+    const latestMethod = new Map(
+      successLogs.filter((l) => l.attendeeId).map((l) => [l.attendeeId, l.method])
     );
-    const header = ["姓名", "電話", "報到狀態", "報到時間", "報到方式"];
-    const rows = attendees.map((attendee) => [
-      attendee.name,
-      attendee.phone,
-      attendee.checkInStatus,
-      attendee.checkedInAt?.toISOString() ?? "",
-      latestMethodByAttendee.get(attendee.id) ?? ""
+    const header = ["姓名", "電話", "Email", "年齡", "性別", "報到狀態", "報到時間", "報到方式"];
+    const rows = attendees.map((a) => [
+      a.name, a.phone,
+      (a as { email?: string | null }).email ?? "",
+      (a as { age?: number | null }).age ?? "",
+      (a as { gender?: string | null }).gender ?? "",
+      a.checkInStatus,
+      a.checkedInAt?.toISOString() ?? "",
+      latestMethod.get(a.id) ?? ""
     ]);
-
-    return [header, ...rows]
-      .map((row) => row.map(toCsvCell).join(","))
-      .join("\n");
+    return [header, ...rows].map((row) => row.map(toCsvCell).join(",")).join("\n");
   },
 
   async update(
@@ -101,26 +125,20 @@ export const attendeeService = {
     input: Partial<{
       name: string;
       phone: string;
+      email: string | null;
+      age: number | null;
+      gender: Gender | null;
       checkInStatus: CheckInStatus;
       checkedInAt: string | null;
     }>
   ) {
     const attendee = await attendeeRepository.findById(attendeeId);
-
-    if (!attendee || attendee.eventId !== eventId) {
-      throw new AppError(404, "ATTENDEE_NOT_FOUND", "找不到報名資料");
-    }
-
+    if (!attendee || attendee.eventId !== eventId) throw new AppError(404, "ATTENDEE_NOT_FOUND", "找不到報名資料");
     return attendeeRepository.update(attendeeId, {
       name: input.name,
       phone: input.phone,
       checkInStatus: input.checkInStatus,
-      checkedInAt:
-        input.checkedInAt === null
-          ? null
-          : input.checkedInAt
-            ? new Date(input.checkedInAt)
-            : undefined
+      checkedInAt: input.checkedInAt === null ? null : input.checkedInAt ? new Date(input.checkedInAt) : undefined
     });
   }
 };

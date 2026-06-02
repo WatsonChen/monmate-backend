@@ -9,6 +9,16 @@ type AuthTokenPayload = {
   role: Express.User["role"];
 };
 
+export function requireRole(...roles: Express.User["role"][]) {
+  return (req: Request, _res: Response, next: NextFunction) => {
+    if (!req.user) return next(new AppError(401, "UNAUTHORIZED", "請先登入"));
+    if (!roles.includes(req.user.role)) {
+      return next(new AppError(403, "FORBIDDEN", "權限不足"));
+    }
+    return next();
+  };
+}
+
 export function requireAuth(
   req: Request,
   _res: Response,

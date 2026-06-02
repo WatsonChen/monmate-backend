@@ -43,53 +43,65 @@ enum PaymentStatus {
 
 enum PaymentProduct {
   EVENT_CREDIT
+  ATTENDEE_CREDIT
+}
+
+enum Gender {
+  M
+  F
+  OTHER
 }
 
 model User {
-  id           String    @id @default(cuid())
-  name         String
-  email        String    @unique
-  passwordHash String
-  role         UserRole  @default(ADMIN)
-  eventCredits Int       @default(0)
-  events       Event[]   @relation("EventCreator")
-  payments     Payment[]
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id              String    @id @default(cuid())
+  name            String
+  email           String    @unique
+  passwordHash    String
+  role            UserRole  @default(ADMIN)
+  attendeeCredits Int       @default(0)
+  events          Event[]   @relation("EventCreator")
+  payments        Payment[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 }
 
 model Event {
-  id            String       @id @default(cuid())
-  name          String
-  slug          String       @unique
-  description   String?
-  startAt       DateTime
-  endAt         DateTime?
-  location      String?
-  attendeeLimit Int?
-  paymentId     String?      @unique
-  payment       Payment?     @relation("EventPayment", fields: [paymentId], references: [id], onDelete: SetNull)
-  createdById   String
-  createdBy     User         @relation("EventCreator", fields: [createdById], references: [id])
-  attendees     Attendee[]
-  checkInLogs   CheckInLog[]
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
+  id                   String       @id @default(cuid())
+  name                 String
+  slug                 String       @unique
+  description          String?
+  content              String?
+  startAt              DateTime
+  endAt                DateTime?
+  location             String?
+  attendeeLimit        Int?
+  registrationRequired Boolean      @default(false)
+  createdById          String
+  createdBy            User         @relation("EventCreator", fields: [createdById], references: [id])
+  attendees            Attendee[]
+  checkInLogs          CheckInLog[]
+  survey               Survey?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
 }
 
 model Attendee {
-  id            String        @id @default(cuid())
-  eventId       String
-  event         Event         @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  name          String
-  phone         String
-  checkInCode   String
-  qrToken       String
-  checkInStatus CheckInStatus @default(NOT_CHECKED_IN)
-  checkedInAt   DateTime?
-  checkInLogs   CheckInLog[]
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id              String           @id @default(cuid())
+  eventId         String
+  event           Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  name            String
+  phone           String
+  email           String?
+  age             Int?
+  gender          Gender?
+  checkInCode     String
+  qrToken         String
+  checkInStatus   CheckInStatus    @default(NOT_CHECKED_IN)
+  checkedInAt     DateTime?
+  checkInLogs     CheckInLog[]
+  surveyResponses SurveyResponse[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   @@unique([eventId, checkInCode])
   @@unique([eventId, qrToken])
@@ -117,7 +129,7 @@ model Payment {
   userId          String
   user            User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   provider        String         @default("newebpay")
-  product         PaymentProduct @default(EVENT_CREDIT)
+  product         PaymentProduct @default(ATTENDEE_CREDIT)
   status          PaymentStatus  @default(PENDING)
   quantity        Int            @default(1)
   creditsGranted  Int            @default(0)
@@ -128,7 +140,6 @@ model Payment {
   providerOrderNo String?        @unique
   providerTradeNo String?        @unique
   checkoutUrl     String?
-  event           Event?         @relation("EventPayment")
   consumedAt      DateTime?
   paidAt          DateTime?
   createdAt       DateTime       @default(now())
@@ -137,4 +148,39 @@ model Payment {
   @@index([userId, createdAt])
   @@index([status])
   @@index([consumedAt])
+}
+
+model Survey {
+  id        String           @id @default(cuid())
+  eventId   String           @unique
+  event     Event            @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  title     String           @default("活動問卷")
+  sentAt    DateTime?
+  questions SurveyQuestion[]
+  responses SurveyResponse[]
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+}
+
+model SurveyQuestion {
+  id       String   @id @default(cuid())
+  surveyId String
+  survey   Survey   @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  question String
+  type     String   @default("text")
+  options  String[]
+  order    Int      @default(0)
+}
+
+model SurveyResponse {
+  id         String    @id @default(cuid())
+  surveyId   String
+  survey     Survey    @relation(fields: [surveyId], references: [id], onDelete: Cascade)
+  attendeeId String?
+  attendee   Attendee? @relation(fields: [attendeeId], references: [id], onDelete: SetNull)
+  answers    Json
+  createdAt  DateTime  @default(now())
+
+  @@index([surveyId])
+  @@index([attendeeId])
 }

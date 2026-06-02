@@ -4,6 +4,9 @@ import { asyncHandler } from "../lib/async-handler";
 import { ok } from "../lib/http";
 import { requireAuth } from "../middlewares/auth";
 import { eventService } from "../services/event.service";
+import { smsService } from "../services/sms.service";
+import { prisma } from "../lib/prisma";
+import { env } from "../config/env";
 
 export const eventRouter = Router();
 
@@ -11,13 +14,16 @@ const createEventSchema = z.object({
   name: z.string().min(1),
   slug: z.string().optional(),
   description: z.string().optional(),
+  content: z.string().optional(),
   startAt: z.string().min(1),
   endAt: z.string().optional(),
-  location: z.string().optional()
+  location: z.string().optional(),
+  registrationRequired: z.boolean().optional()
 });
 
 const updateEventSchema = createEventSchema.partial().extend({
   description: z.string().nullable().optional(),
+  content: z.string().nullable().optional(),
   endAt: z.string().nullable().optional(),
   location: z.string().nullable().optional()
 });
@@ -30,12 +36,25 @@ eventRouter.get(
   })
 );
 
+eventRouter.get(
+  "/ticket/:slug",
+  asyncHandler(async (req, res) => {
+    const { token } = z.object({ token: z.string() }).parse(req.query);
+    const event = await eventService.getPublicBySlug(req.params.slug);
+    const attendee = await prisma.attendee.findFirst({
+      where: { eventId: event.id, qrToken: token },
+      select: { id: true, name: true, phone: true, checkInCode: true, qrToken: true, checkInStatus: true }
+    });
+    return ok(res, { event, attendee });
+  })
+);
+
 eventRouter.use(requireAuth);
 
 eventRouter.get(
   "/",
-  asyncHandler(async (_req, res) => {
-    const events = await eventService.list();
+  asyncHandler(async (req, res) => {
+    const events = await eventService.list(req.user!.id);
     return ok(res, events);
   })
 );
@@ -44,10 +63,7 @@ eventRouter.post(
   "/",
   asyncHandler(async (req, res) => {
     const body = createEventSchema.parse(req.body);
-    const event = await eventService.create({
-      ...body,
-      createdById: req.user!.id
-    });
+    const event = await eventService.create({ ...body, createdById: req.user!.id });
     return ok(res, event, 201);
   })
 );
@@ -74,5 +90,42 @@ eventRouter.delete(
   asyncHandler(async (req, res) => {
     const result = await eventService.delete(req.params.eventId);
     return ok(res, result);
+  })
+);
+
+eventRouter.get(
+  "/:eventId/analytics",
+  asyncHandler(async (req, res) => {
+    const analytics = await eventService.getAnalytics(req.params.eventId);
+    return ok(res, analytics);
+  })
+);
+
+eventRouter.post(
+  "/:eventId/invite",
+  asyncHandler(async (req, res) => {
+    const { template } = z.object({
+      template: z.enum(["with-registration", "without-registration"])
+    }).parse(req.body);
+
+    const event = await eventService.get(req.params.eventId);
+    const attendees = await prisma.attendee.findMany({
+      where: { eventId: req.params.eventId },
+      select: { name: true, phone: true, qrToken: true }
+    });
+
+    const webUrl = env.WEB_APP_URL.replace(/\/$/, "");
+    const results = await smsService.sendBulk(
+      attendees.map((a) => ({
+        phone: a.phone,
+        attendeeName: a.name,
+        eventName: event.name,
+        eventDate: new Date(event.startAt).toLocaleDateString("zh-TW"),
+        ticketUrl: `${webUrl}/event/${event.slug}/ticket?token=${a.qrToken}`,
+        template
+      }))
+    );
+
+    return ok(res, results);
   })
 );

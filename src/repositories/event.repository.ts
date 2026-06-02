@@ -1,59 +1,34 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 
+const include = { _count: { select: { attendees: true, checkInLogs: true } } } as const;
+
 export const eventRepository = {
-  list() {
+  listByUser(userId: string) {
     return prisma.event.findMany({
+      where: { createdById: userId },
       orderBy: { startAt: "desc" },
-      include: {
-        _count: {
-          select: { attendees: true, checkInLogs: true }
-        }
-      }
+      include
     });
   },
 
   findById(id: string) {
-    return prisma.event.findUnique({
-      where: { id },
-      include: {
-        _count: {
-          select: { attendees: true, checkInLogs: true }
-        }
-      }
-    });
+    return prisma.event.findUnique({ where: { id }, include });
   },
 
   findBySlug(slug: string) {
     return prisma.event.findUnique({
       where: { slug },
       select: {
-        id: true,
-        name: true,
-        slug: true,
-        description: true,
-        startAt: true,
-        endAt: true,
-        location: true,
-        attendeeLimit: true
+        id: true, name: true, slug: true, description: true, content: true,
+        startAt: true, endAt: true, location: true, attendeeLimit: true,
+        registrationRequired: true
       }
     });
-  },
-
-  create(data: Prisma.EventUncheckedCreateInput) {
-    return prisma.event.create({ data });
   },
 
   update(id: string, data: Prisma.EventUncheckedUpdateInput) {
-    return prisma.event.update({
-      where: { id },
-      data,
-      include: {
-        _count: {
-          select: { attendees: true, checkInLogs: true }
-        }
-      }
-    });
+    return prisma.event.update({ where: { id }, data, include });
   },
 
   delete(id: string) {
