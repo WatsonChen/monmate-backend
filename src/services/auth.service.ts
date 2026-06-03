@@ -33,7 +33,7 @@ export const authService = {
         name: user.name,
         email: user.email,
         role: user.role,
-        eventCredits: user.eventCredits
+        attendeeCredits: user.attendeeCredits
       }
     };
   },
@@ -90,7 +90,7 @@ export const authService = {
         name: user.name,
         email: user.email,
         role: user.role,
-        eventCredits: user.eventCredits
+        attendeeCredits: user.attendeeCredits
       }
     };
   },
@@ -107,7 +107,7 @@ export const authService = {
       name: user.name,
       email: user.email,
       role: user.role,
-      eventCredits: user.eventCredits
+      attendeeCredits: user.attendeeCredits
     };
   }
 };
