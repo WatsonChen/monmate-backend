@@ -63,7 +63,7 @@ export const eventService = {
     registrationRequired?: boolean;
     createdById: string;
   }) {
-    const slug = input.slug?.trim() || createSlug(input.name);
+    const slug = input.slug?.trim() || createSlug(input.name) || `event-${Date.now()}`;
 
     const event = await prisma.event.create({
       data: {
