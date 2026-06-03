@@ -17,19 +17,19 @@ async function main() {
       name: "abby",
       email: "abby@monmate.local",
       role: UserRole.OWNER,
-      eventCredits: 3
+      attendeeCredits: 3
     },
     {
       name: "watson",
       email: "watson@monmate.local",
       role: UserRole.ADMIN,
-      eventCredits: 3
+      attendeeCredits: 3
     },
     {
       name: "現場工作人員",
       email: "staff@monmate.local",
       role: UserRole.STAFF,
-      eventCredits: 0
+      attendeeCredits: 0
     }
   ];
 
@@ -56,7 +56,7 @@ async function main() {
     users.flatMap((user) => {
       const creditCount =
         testUsers.find((testUser) => testUser.email === user.email)
-          ?.eventCredits ?? 0;
+          ?.attendeeCredits ?? 0;
 
       return Array.from({ length: creditCount }, (_, index) =>
         prisma.payment.upsert({
@@ -170,7 +170,7 @@ async function main() {
   console.log("Test accounts:");
   for (const user of users) {
     console.log(
-      `- ${user.role}: ${user.email} / 123456 | credits=${user.eventCredits}`
+      `- ${user.role}: ${user.email} / 123456 | credits=${user.attendeeCredits}`
     );
   }
   console.log(`Event ID: ${event.id}`);

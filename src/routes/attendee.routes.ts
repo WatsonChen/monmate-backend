@@ -36,7 +36,7 @@ attendeeRouter.get(
 
 attendeeRouter.post(
   "/import",
-  upload.single("file"),
+  upload.single("file") as never,
   asyncHandler(async (req, res) => {
     if (!req.file) throw new AppError(400, "FILE_REQUIRED", "請上傳 Excel 檔案");
     const result = await attendeeService.importFromExcel(req.params.eventId, req.file.buffer, req.user!.id);

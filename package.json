@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "workspaces": ["packages/*"],
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  },
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",

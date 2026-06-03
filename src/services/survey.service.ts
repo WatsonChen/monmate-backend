@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { AppError } from "../lib/http";
 import { prisma } from "../lib/prisma";
 import { env } from "../config/env";
@@ -81,7 +82,7 @@ export const surveyService = {
     if (!survey) throw new AppError(404, "SURVEY_NOT_FOUND", "找不到問卷");
 
     const response = await prisma.surveyResponse.create({
-      data: { surveyId, attendeeId, answers }
+      data: { surveyId, attendeeId, answers: answers as Prisma.InputJsonValue }
     });
     return { id: response.id };
   },
