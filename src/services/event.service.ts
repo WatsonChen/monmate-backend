@@ -1,7 +1,7 @@
 import { createSlug } from "@monmate/utils";
-import { AppError } from "../lib/http";
-import { prisma } from "../lib/prisma";
-import { eventRepository } from "../repositories/event.repository";
+import { AppError } from "../lib/http.js";
+import { prisma } from "../lib/prisma.js";
+import { eventRepository } from "../repositories/event.repository.js";
 
 type EventWithCounts = NonNullable<Awaited<ReturnType<typeof eventRepository.findById>>>;
 

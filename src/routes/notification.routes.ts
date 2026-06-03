@@ -1,8 +1,8 @@
 import { Router } from "express";
-import { asyncHandler } from "../lib/async-handler";
-import { ok } from "../lib/http";
-import { requireAuth } from "../middlewares/auth";
-import { notificationService } from "../services/notification.service";
+import { asyncHandler } from "../lib/async-handler.js";
+import { ok } from "../lib/http.js";
+import { requireAuth } from "../middlewares/auth.js";
+import { notificationService } from "../services/notification.service.js";
 
 export const notificationRouter = Router({ mergeParams: true });
 

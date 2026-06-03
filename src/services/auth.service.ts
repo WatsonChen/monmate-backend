@@ -2,10 +2,10 @@ import bcrypt from "bcryptjs";
 import { OAuth2Client } from "google-auth-library";
 import jwt from "jsonwebtoken";
 import type { SignOptions } from "jsonwebtoken";
-import { env } from "../config/env";
-import { AppError } from "../lib/http";
-import { prisma } from "../lib/prisma";
-import { userRepository } from "../repositories/user.repository";
+import { env } from "../config/env.js";
+import { AppError } from "../lib/http.js";
+import { prisma } from "../lib/prisma.js";
+import { userRepository } from "../repositories/user.repository.js";
 
 export const authService = {
   async login(email: string, password: string) {

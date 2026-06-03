@@ -1,7 +1,7 @@
 import jwt from "jsonwebtoken";
 import type { NextFunction, Request, Response } from "express";
-import { env } from "../config/env";
-import { AppError } from "../lib/http";
+import { env } from "../config/env.js";
+import { AppError } from "../lib/http.js";
 
 type AuthTokenPayload = {
   sub: string;

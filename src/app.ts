@@ -2,9 +2,9 @@ import cors from "cors";
 import express from "express";
 import helmet from "helmet";
 import morgan from "morgan";
-import { corsOrigins } from "./config/env";
-import { errorHandler, notFound } from "./middlewares/error";
-import { routes } from "./routes";
+import { corsOrigins } from "./config/env.js";
+import { errorHandler, notFound } from "./middlewares/error.js";
+import { routes } from "./routes/index.js";
 
 export const app = express();
 

@@ -4,9 +4,9 @@ import {
   CheckInStatus
 } from "@prisma/client";
 import { getPhoneLastThree } from "@monmate/utils";
-import { prisma } from "../lib/prisma";
-import { attendeeRepository } from "../repositories/attendee.repository";
-import { checkInRepository } from "../repositories/check-in.repository";
+import { prisma } from "../lib/prisma.js";
+import { attendeeRepository } from "../repositories/attendee.repository.js";
+import { checkInRepository } from "../repositories/check-in.repository.js";
 
 function buildResult(status: CheckInLogStatus, attendee?: Awaited<ReturnType<typeof attendeeRepository.findById>>) {
   return {

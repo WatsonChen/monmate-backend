@@ -2,10 +2,10 @@ import { CheckInStatus } from "@prisma/client";
 import { Router } from "express";
 import multer from "multer";
 import { z } from "zod";
-import { asyncHandler } from "../lib/async-handler";
-import { AppError, ok } from "../lib/http";
-import { requireAuth } from "../middlewares/auth";
-import { attendeeService } from "../services/attendee.service";
+import { asyncHandler } from "../lib/async-handler.js";
+import { AppError, ok } from "../lib/http.js";
+import { requireAuth } from "../middlewares/auth.js";
+import { attendeeService } from "../services/attendee.service.js";
 
 export const attendeeRouter = Router({ mergeParams: true });
 

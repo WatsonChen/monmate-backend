@@ -1,12 +1,12 @@
 import { Router } from "express";
 import { z } from "zod";
-import { asyncHandler } from "../lib/async-handler";
-import { ok } from "../lib/http";
-import { requireAuth } from "../middlewares/auth";
-import { eventService } from "../services/event.service";
-import { smsService } from "../services/sms.service";
-import { prisma } from "../lib/prisma";
-import { env } from "../config/env";
+import { asyncHandler } from "../lib/async-handler.js";
+import { ok } from "../lib/http.js";
+import { requireAuth } from "../middlewares/auth.js";
+import { eventService } from "../services/event.service.js";
+import { smsService } from "../services/sms.service.js";
+import { prisma } from "../lib/prisma.js";
+import { env } from "../config/env.js";
 
 export const eventRouter = Router();
 

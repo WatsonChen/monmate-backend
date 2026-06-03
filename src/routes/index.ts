@@ -1,11 +1,11 @@
 import { Router } from "express";
-import { attendeeRouter } from "./attendee.routes";
-import { authRouter } from "./auth.routes";
-import { billingRouter } from "./billing.routes";
-import { checkInRouter } from "./check-in.routes";
-import { eventRouter } from "./event.routes";
-import { notificationRouter } from "./notification.routes";
-import { surveyRouter } from "./survey.routes";
+import { attendeeRouter } from "./attendee.routes.js";
+import { authRouter } from "./auth.routes.js";
+import { billingRouter } from "./billing.routes.js";
+import { checkInRouter } from "./check-in.routes.js";
+import { eventRouter } from "./event.routes.js";
+import { notificationRouter } from "./notification.routes.js";
+import { surveyRouter } from "./survey.routes.js";
 
 export const routes = Router();
 

@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
-import { asyncHandler } from "../lib/async-handler";
-import { ok } from "../lib/http";
-import { requireAuth } from "../middlewares/auth";
-import { checkInService } from "../services/check-in.service";
+import { asyncHandler } from "../lib/async-handler.js";
+import { ok } from "../lib/http.js";
+import { requireAuth } from "../middlewares/auth.js";
+import { checkInService } from "../services/check-in.service.js";
 
 export const checkInRouter = Router({ mergeParams: true });
 

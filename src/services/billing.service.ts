@@ -5,9 +5,9 @@ import {
   randomBytes
 } from "node:crypto";
 import { PaymentProduct, PaymentStatus } from "@prisma/client";
-import { env } from "../config/env";
-import { AppError } from "../lib/http";
-import { prisma } from "../lib/prisma";
+import { env } from "../config/env.js";
+import { AppError } from "../lib/http.js";
+import { prisma } from "../lib/prisma.js";
 
 const provider = "newebpay";
 

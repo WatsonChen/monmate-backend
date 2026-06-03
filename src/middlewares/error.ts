@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 import type { NextFunction, Request, Response } from "express";
 import { ZodError } from "zod";
-import { AppError, fail } from "../lib/http";
+import { AppError, fail } from "../lib/http.js";
 
 export function notFound(req: Request, res: Response) {
   return fail(res, 404, "NOT_FOUND", `找不到路由 ${req.method} ${req.path}`);

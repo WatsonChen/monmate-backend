@@ -2,10 +2,10 @@ import { randomBytes } from "node:crypto";
 import { CheckInLogStatus, CheckInStatus, Gender } from "@prisma/client";
 import { toCsvCell } from "@monmate/utils";
 import readXlsxFile from "read-excel-file/node";
-import { AppError } from "../lib/http";
-import { prisma } from "../lib/prisma";
-import { attendeeRepository } from "../repositories/attendee.repository";
-import { eventService } from "./event.service";
+import { AppError } from "../lib/http.js";
+import { prisma } from "../lib/prisma.js";
+import { attendeeRepository } from "../repositories/attendee.repository.js";
+import { eventService } from "./event.service.js";
 
 function createCheckInCode(index: number) {
   return `MM${String(Date.now()).slice(-4)}${String(index + 1).padStart(4, "0")}`;

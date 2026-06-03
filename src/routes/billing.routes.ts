@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
-import { asyncHandler } from "../lib/async-handler";
-import { ok } from "../lib/http";
-import { requireAuth } from "../middlewares/auth";
-import { billingService } from "../services/billing.service";
+import { asyncHandler } from "../lib/async-handler.js";
+import { ok } from "../lib/http.js";
+import { requireAuth } from "../middlewares/auth.js";
+import { billingService } from "../services/billing.service.js";
 
 export const billingRouter = Router();
 

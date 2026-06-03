@@ -1,5 +1,5 @@
 import type { Prisma } from "@prisma/client";
-import { prisma } from "../lib/prisma";
+import { prisma } from "../lib/prisma.js";
 
 const include = { _count: { select: { attendees: true, checkInLogs: true } } } as const;
 

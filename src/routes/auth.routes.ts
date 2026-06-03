@@ -1,9 +1,9 @@
 import { Router } from "express";
 import { z } from "zod";
-import { asyncHandler } from "../lib/async-handler";
-import { ok } from "../lib/http";
-import { requireAuth } from "../middlewares/auth";
-import { authService } from "../services/auth.service";
+import { asyncHandler } from "../lib/async-handler.js";
+import { ok } from "../lib/http.js";
+import { requireAuth } from "../middlewares/auth.js";
+import { authService } from "../services/auth.service.js";
 
 export const authRouter = Router();
 

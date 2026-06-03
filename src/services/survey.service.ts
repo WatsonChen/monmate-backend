@@ -1,8 +1,8 @@
 import type { Prisma } from "@prisma/client";
-import { AppError } from "../lib/http";
-import { prisma } from "../lib/prisma";
-import { env } from "../config/env";
-import { smsService } from "./sms.service";
+import { AppError } from "../lib/http.js";
+import { prisma } from "../lib/prisma.js";
+import { env } from "../config/env.js";
+import { smsService } from "./sms.service.js";
 
 export const surveyService = {
   async getOrCreate(eventId: string) {
