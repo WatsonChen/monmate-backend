@@ -11,7 +11,7 @@
     "dev": "tsx watch src/server.ts",
     "start": "tsx src/server.ts",
     "build": "npx prisma generate && npx esbuild src/entry.ts --bundle --platform=node --format=esm --target=node20 --outfile=api/index.js --external:@prisma/client --external:.prisma/client --external:@aws-sdk/client-s3",
-    "vercel-build": "npx prisma generate && npx esbuild src/entry.ts --bundle --platform=node --format=esm --target=node20 --outfile=api/index.js --external:@prisma/client --external:.prisma/client --external:@aws-sdk/client-s3",
+    "vercel-build": "npx prisma migrate deploy && npx prisma generate && npx esbuild src/entry.ts --bundle --platform=node --format=esm --target=node20 --outfile=api/index.js --external:@prisma/client --external:.prisma/client --external:@aws-sdk/client-s3",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate",

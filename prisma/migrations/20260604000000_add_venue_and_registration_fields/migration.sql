@@ -1,0 +1,2 @@
+ALTER TABLE "Event" ADD COLUMN IF NOT EXISTS "venueCode" TEXT NOT NULL DEFAULT gen_random_uuid()::text;
+ALTER TABLE "Event" ADD COLUMN IF NOT EXISTS "registrationFields" JSONB NOT NULL DEFAULT '[]';
