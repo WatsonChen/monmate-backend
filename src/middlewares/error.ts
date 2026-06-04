@@ -22,6 +22,7 @@ export function errorHandler(
   }
 
   if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    console.error("[Prisma KnownRequestError]", error.code, error.message, JSON.stringify(error.meta));
     if (error.code === "P2002") {
       return fail(res, 409, "DUPLICATE_RECORD", "資料已存在，請改用其他名稱或代碼");
     }
