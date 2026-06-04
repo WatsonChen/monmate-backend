@@ -162,7 +162,7 @@ export const attendeeService = {
         email: input.email || null,
         age: input.age ?? null,
         gender: input.gender ?? null,
-        customFields: input.customFields ?? null
+        customFields: input.customFields ?? undefined
       },
       select: { id: true, name: true, phone: true, checkInCode: true, qrToken: true, checkInStatus: true }
     });
