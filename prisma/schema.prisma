@@ -76,6 +76,7 @@ model Event {
   location             String?
   attendeeLimit        Int?
   registrationRequired Boolean      @default(false)
+  venueCode            String       @default(uuid())
   createdById          String
   createdBy            User         @relation("EventCreator", fields: [createdById], references: [id])
   attendees            Attendee[]

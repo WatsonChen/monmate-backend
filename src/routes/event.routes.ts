@@ -101,6 +101,24 @@ eventRouter.get(
   })
 );
 
+eventRouter.get(
+  "/:eventId/venue-qr",
+  asyncHandler(async (req, res) => {
+    const event = await prisma.event.findUnique({
+      where: { id: req.params.eventId },
+      select: { slug: true, venueCode: true }
+    });
+    if (!event) {
+      return ok(res, null);
+    }
+    const webUrl = env.WEB_APP_URL.replace(/\/$/, "");
+    return ok(res, {
+      venueCode: event.venueCode,
+      venueUrl: `${webUrl}/event/${event.slug}/checkin?v=${event.venueCode}`
+    });
+  })
+);
+
 eventRouter.post(
   "/:eventId/invite",
   asyncHandler(async (req, res) => {

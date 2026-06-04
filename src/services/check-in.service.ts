@@ -7,6 +7,7 @@ import { getPhoneLastThree } from "@monmate/utils";
 import { prisma } from "../lib/prisma.js";
 import { attendeeRepository } from "../repositories/attendee.repository.js";
 import { checkInRepository } from "../repositories/check-in.repository.js";
+import { AppError } from "../lib/http.js";
 
 function buildResult(status: CheckInLogStatus, attendee?: Awaited<ReturnType<typeof attendeeRepository.findById>>) {
   return {
@@ -31,6 +32,14 @@ export const checkInService = {
   },
 
   async byManualCode(eventId: string, checkInCode: string) {
+    return this.checkIn(eventId, CheckInMethod.MANUAL_CODE, checkInCode);
+  },
+
+  async bySelfCheckIn(eventId: string, checkInCode: string, venueCode: string) {
+    const event = await prisma.event.findUnique({ where: { id: eventId }, select: { venueCode: true } });
+    if (!event || event.venueCode !== venueCode) {
+      throw new AppError(403, "INVALID_VENUE_CODE", "現場驗證碼不正確，請至活動現場掃描 QR Code 完成報到");
+    }
     return this.checkIn(eventId, CheckInMethod.MANUAL_CODE, checkInCode);
   },
 
