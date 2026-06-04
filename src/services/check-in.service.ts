@@ -35,12 +35,15 @@ export const checkInService = {
     return this.checkIn(eventId, CheckInMethod.MANUAL_CODE, checkInCode);
   },
 
-  async bySelfCheckIn(eventId: string, checkInCode: string, venueCode: string) {
+  async bySelfCheckIn(eventId: string, venueCode: string, credential: { phone: string } | { checkInCode: string }) {
     const event = await prisma.event.findUnique({ where: { id: eventId }, select: { venueCode: true } });
     if (!event || event.venueCode !== venueCode) {
       throw new AppError(403, "INVALID_VENUE_CODE", "現場驗證碼不正確，請至活動現場掃描 QR Code 完成報到");
     }
-    return this.checkIn(eventId, CheckInMethod.MANUAL_CODE, checkInCode);
+    if ("phone" in credential) {
+      return this.checkIn(eventId, CheckInMethod.PHONE, credential.phone);
+    }
+    return this.checkIn(eventId, CheckInMethod.MANUAL_CODE, credential.checkInCode);
   },
 
   async checkIn(eventId: string, method: CheckInMethod, credential: string) {
@@ -58,7 +61,9 @@ export const checkInService = {
     const attendee =
       method === CheckInMethod.QR_CODE
         ? await attendeeRepository.findByQrToken(eventId, normalizedCredential)
-        : await attendeeRepository.findByCheckInCode(eventId, normalizedCredential);
+        : method === CheckInMethod.PHONE
+          ? await attendeeRepository.findByPhone(eventId, normalizedCredential)
+          : await attendeeRepository.findByCheckInCode(eventId, normalizedCredential);
 
     if (!attendee) {
       await checkInRepository.createLog({

@@ -25,9 +25,13 @@ const manualSchema = z.object({
 });
 
 const selfCheckInSchema = z.object({
-  checkInCode: z.string().min(1),
   venueCode: z.string().min(1)
-});
+}).and(
+  z.union([
+    z.object({ phone: z.string().min(1) }),
+    z.object({ checkInCode: z.string().min(1) })
+  ])
+);
 
 // 工作人員後台用：掃描受邀者 QR code
 checkInRouter.post(
@@ -64,10 +68,13 @@ checkInRouter.post(
   "/self",
   asyncHandler(async (req, res) => {
     const body = selfCheckInSchema.parse(req.body);
+    const credential = "phone" in body
+      ? { phone: body.phone }
+      : { checkInCode: body.checkInCode };
     const result = await checkInService.bySelfCheckIn(
       req.params.eventId,
-      body.checkInCode,
-      body.venueCode
+      body.venueCode,
+      credential
     );
     return ok(res, result);
   })

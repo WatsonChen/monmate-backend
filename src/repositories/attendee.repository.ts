@@ -37,6 +37,12 @@ export const attendeeRepository = {
     });
   },
 
+  findByPhone(eventId: string, phone: string) {
+    return prisma.attendee.findFirst({
+      where: { eventId, phone }
+    });
+  },
+
   createMany(data: Prisma.AttendeeCreateManyInput[]) {
     return prisma.attendee.createMany({ data, skipDuplicates: true });
   },

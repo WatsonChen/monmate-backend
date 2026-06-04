@@ -23,6 +23,7 @@ enum CheckInStatus {
 enum CheckInMethod {
   QR_CODE
   MANUAL_CODE
+  PHONE
 }
 
 enum CheckInLogStatus {

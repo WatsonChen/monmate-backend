@@ -108,9 +108,7 @@ attendeeRouter.post(
       attendeeName: attendee.name,
       eventName: event.name,
       eventDate: new Date(event.startAt).toLocaleDateString("zh-TW"),
-      ticketUrl: template === "with-registration"
-        ? `${webUrl}/event/${event.slug}/register?token=${attendee.qrToken}`
-        : `${webUrl}/event/${event.slug}/ticket?token=${attendee.qrToken}`,
+      ticketUrl: `${webUrl}/event/${event.slug}?token=${attendee.qrToken}`,
       template
     });
 
