@@ -10,6 +10,11 @@ import { env } from "../config/env.js";
 
 export const eventRouter = Router();
 
+const registrationFieldSchema = z.array(z.object({
+  key: z.enum(["email", "age", "gender"]),
+  required: z.boolean()
+}));
+
 const createEventSchema = z.object({
   name: z.string().min(1),
   slug: z.string().optional(),
@@ -18,7 +23,8 @@ const createEventSchema = z.object({
   startAt: z.string().min(1),
   endAt: z.string().optional(),
   location: z.string().optional(),
-  registrationRequired: z.boolean().optional()
+  registrationRequired: z.boolean().optional(),
+  registrationFields: registrationFieldSchema.optional()
 });
 
 const updateEventSchema = createEventSchema.partial().extend({
@@ -139,7 +145,9 @@ eventRouter.post(
         attendeeName: a.name,
         eventName: event.name,
         eventDate: new Date(event.startAt).toLocaleDateString("zh-TW"),
-        ticketUrl: `${webUrl}/event/${event.slug}/ticket?token=${a.qrToken}`,
+        ticketUrl: template === "with-registration"
+          ? `${webUrl}/event/${event.slug}/register?token=${a.qrToken}`
+          : `${webUrl}/event/${event.slug}/ticket?token=${a.qrToken}`,
         template
       }))
     );

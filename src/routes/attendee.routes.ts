@@ -20,6 +20,21 @@ attendeeRouter.get(
   })
 );
 
+attendeeRouter.post(
+  "/register",
+  asyncHandler(async (req, res) => {
+    const body = z.object({
+      token: z.string().min(1),
+      name: z.string().min(1),
+      email: z.string().email().optional().or(z.literal("")),
+      age: z.coerce.number().int().min(1).max(120).optional(),
+      gender: z.enum(["M", "F", "OTHER"]).optional()
+    }).parse(req.body);
+    const attendee = await attendeeService.completeRegistration(req.params.eventId, body.token, body);
+    return ok(res, attendee);
+  })
+);
+
 attendeeRouter.use(requireAuth);
 
 attendeeRouter.get(

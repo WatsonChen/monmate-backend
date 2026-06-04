@@ -17,12 +17,18 @@ function toEventDTO(event: EventWithCounts) {
     location: event.location,
     attendeeLimit: event.attendeeLimit,
     registrationRequired: event.registrationRequired,
+    registrationFields: event.registrationFields as RegistrationField[],
     attendeeCount: event._count.attendees,
     checkInLogCount: event._count.checkInLogs,
     createdAt: event.createdAt.toISOString(),
     updatedAt: event.updatedAt.toISOString()
   };
 }
+
+export type RegistrationField = {
+  key: "email" | "age" | "gender";
+  required: boolean;
+};
 
 export const eventService = {
   async list(userId: string) {
@@ -48,7 +54,8 @@ export const eventService = {
       startAt: event.startAt.toISOString(),
       endAt: event.endAt?.toISOString() ?? null,
       location: event.location,
-      registrationRequired: event.registrationRequired
+      registrationRequired: event.registrationRequired,
+      registrationFields: event.registrationFields as RegistrationField[]
     };
   },
 
@@ -61,6 +68,7 @@ export const eventService = {
     endAt?: string;
     location?: string;
     registrationRequired?: boolean;
+    registrationFields?: RegistrationField[];
     createdById: string;
   }) {
     const slug = input.slug?.trim() || createSlug(input.name) || `event-${Date.now()}`;
@@ -75,6 +83,7 @@ export const eventService = {
         endAt: input.endAt ? new Date(input.endAt) : undefined,
         location: input.location,
         registrationRequired: input.registrationRequired ?? false,
+        registrationFields: input.registrationFields ?? [],
         createdById: input.createdById
       },
       include: { _count: { select: { attendees: true, checkInLogs: true } } }
@@ -94,6 +103,7 @@ export const eventService = {
       endAt: string | null;
       location: string | null;
       registrationRequired: boolean;
+      registrationFields: RegistrationField[];
     }>
   ) {
     await this.get(eventId);

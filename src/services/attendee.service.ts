@@ -140,5 +140,25 @@ export const attendeeService = {
       checkInStatus: input.checkInStatus,
       checkedInAt: input.checkedInAt === null ? null : input.checkedInAt ? new Date(input.checkedInAt) : undefined
     });
+  },
+
+  async completeRegistration(
+    eventId: string,
+    qrToken: string,
+    input: { name: string; email?: string; age?: number; gender?: "M" | "F" | "OTHER" }
+  ) {
+    const attendee = await attendeeRepository.findByQrToken(eventId, qrToken);
+    if (!attendee) throw new AppError(404, "ATTENDEE_NOT_FOUND", "找不到報名資料，請確認連結是否正確");
+    const updated = await prisma.attendee.update({
+      where: { id: attendee.id },
+      data: {
+        name: input.name,
+        email: input.email || null,
+        age: input.age ?? null,
+        gender: input.gender ?? null
+      },
+      select: { id: true, name: true, phone: true, checkInCode: true, qrToken: true, checkInStatus: true }
+    });
+    return updated;
   }
 };
