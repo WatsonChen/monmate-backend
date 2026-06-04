@@ -218,7 +218,7 @@ export const billingService = {
         ItemDesc: `MonMate ${tier.label} ${tier.attendeeCredits} 人報到額度`,
         ReturnURL: appUrl(env.API_BASE_URL, "/billing/newebpay/return"),
         NotifyURL: appUrl(env.API_BASE_URL, "/billing/newebpay/notify"),
-        ClientBackURL: appUrl(env.WEB_APP_URL, "/admin/events/new"),
+        ClientBackURL: appUrl(env.WEB_APP_URL, "/admin/billing"),
         LoginType: "0", CREDIT: "1", WEBATM: "0", VACC: "0", CVS: "0", BARCODE: "0"
       },
       config.hashKey, config.hashIv
@@ -270,9 +270,9 @@ export const billingService = {
     try {
       const result = await this.handleNewebPayNotify(body);
       const status = "paymentId" in result && result.paymentId ? "success" : "pending";
-      return appUrl(env.WEB_APP_URL, `/admin/events/new?payment=${status}`);
+      return appUrl(env.WEB_APP_URL, `/admin/billing?payment=${status}`);
     } catch {
-      return appUrl(env.WEB_APP_URL, "/admin/events/new?payment=failed");
+      return appUrl(env.WEB_APP_URL, "/admin/billing?payment=failed");
     }
   }
 };

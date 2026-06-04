@@ -6,6 +6,10 @@ import { asyncHandler } from "../lib/async-handler.js";
 import { AppError, ok } from "../lib/http.js";
 import { requireAuth } from "../middlewares/auth.js";
 import { attendeeService } from "../services/attendee.service.js";
+import { eventService } from "../services/event.service.js";
+import { smsService } from "../services/sms.service.js";
+import { prisma } from "../lib/prisma.js";
+import { env } from "../config/env.js";
 
 export const attendeeRouter = Router({ mergeParams: true });
 
@@ -28,7 +32,8 @@ attendeeRouter.post(
       name: z.string().min(1),
       email: z.string().email().optional().or(z.literal("")),
       age: z.coerce.number().int().min(1).max(120).optional(),
-      gender: z.enum(["M", "F", "OTHER"]).optional()
+      gender: z.enum(["M", "F", "OTHER"]).optional(),
+      customFields: z.record(z.string(), z.union([z.string(), z.number()])).optional()
     }).parse(req.body);
     const attendee = await attendeeService.completeRegistration(req.params.eventId, body.token, body);
     return ok(res, attendee);
@@ -80,5 +85,35 @@ attendeeRouter.patch(
     }).parse(req.body);
     const attendee = await attendeeService.update(req.params.eventId, req.params.attendeeId, body);
     return ok(res, attendee);
+  })
+);
+
+attendeeRouter.post(
+  "/:attendeeId/invite",
+  asyncHandler(async (req, res) => {
+    const { template } = z.object({
+      template: z.enum(["with-registration", "without-registration"])
+    }).parse(req.body);
+
+    const event = await eventService.get(req.params.eventId);
+    const attendee = await prisma.attendee.findUnique({
+      where: { id: req.params.attendeeId },
+      select: { name: true, phone: true, qrToken: true }
+    });
+    if (!attendee) throw new AppError(404, "ATTENDEE_NOT_FOUND", "找不到報名資料");
+
+    const webUrl = env.WEB_APP_URL.replace(/\/$/, "");
+    const result = await smsService.send({
+      phone: attendee.phone,
+      attendeeName: attendee.name,
+      eventName: event.name,
+      eventDate: new Date(event.startAt).toLocaleDateString("zh-TW"),
+      ticketUrl: template === "with-registration"
+        ? `${webUrl}/event/${event.slug}/register?token=${attendee.qrToken}`
+        : `${webUrl}/event/${event.slug}/ticket?token=${attendee.qrToken}`,
+      template
+    });
+
+    return ok(res, result);
   })
 );

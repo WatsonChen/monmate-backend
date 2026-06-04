@@ -21,7 +21,7 @@ export const authService = {
     };
 
     const token = jwt.sign(
-      { email: user.email, role: user.role },
+      { email: user.email, role: user.role, assignedEventId: user.assignedEventId ?? null },
       env.JWT_SECRET,
       signOptions
     );
@@ -33,7 +33,8 @@ export const authService = {
         name: user.name,
         email: user.email,
         role: user.role,
-        attendeeCredits: user.attendeeCredits
+        attendeeCredits: user.attendeeCredits,
+        assignedEventId: user.assignedEventId ?? null
       }
     };
   },
@@ -107,7 +108,8 @@ export const authService = {
       name: user.name,
       email: user.email,
       role: user.role,
-      attendeeCredits: user.attendeeCredits
+      attendeeCredits: user.attendeeCredits,
+      assignedEventId: user.assignedEventId ?? null
     };
   }
 };

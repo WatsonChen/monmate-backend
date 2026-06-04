@@ -26,7 +26,10 @@ function toEventDTO(event: EventWithCounts) {
 }
 
 export type RegistrationField = {
-  key: "email" | "age" | "gender";
+  key: string;
+  label?: string;
+  type?: "text" | "number" | "select";
+  options?: string[];
   required: boolean;
 };
 
@@ -67,26 +70,49 @@ export const eventService = {
     startAt: string;
     endAt?: string;
     location?: string;
+    attendeeLimit?: number;
     registrationRequired?: boolean;
     registrationFields?: RegistrationField[];
     createdById: string;
   }) {
     const slug = input.slug?.trim() || createSlug(input.name) || `event-${Date.now()}`;
 
-    const event = await prisma.event.create({
-      data: {
-        name: input.name,
-        slug,
-        description: input.description,
-        content: input.content,
-        startAt: new Date(input.startAt),
-        endAt: input.endAt ? new Date(input.endAt) : undefined,
-        location: input.location,
-        registrationRequired: input.registrationRequired ?? false,
-        registrationFields: input.registrationFields ?? [],
-        createdById: input.createdById
-      },
-      include: { _count: { select: { attendees: true, checkInLogs: true } } }
+    const event = await prisma.$transaction(async (tx) => {
+      if (input.attendeeLimit && input.attendeeLimit > 0) {
+        const user = await tx.user.findUnique({
+          where: { id: input.createdById },
+          select: { attendeeCredits: true }
+        });
+        if (!user) throw new AppError(404, "USER_NOT_FOUND", "找不到使用者");
+        if (user.attendeeCredits < input.attendeeLimit) {
+          throw new AppError(
+            402,
+            "INSUFFICIENT_ATTENDEE_CREDITS",
+            `人次額度不足。需要 ${input.attendeeLimit} 個額度，目前剩餘 ${user.attendeeCredits} 個。`
+          );
+        }
+        await tx.user.update({
+          where: { id: input.createdById },
+          data: { attendeeCredits: { decrement: input.attendeeLimit } }
+        });
+      }
+
+      return tx.event.create({
+        data: {
+          name: input.name,
+          slug,
+          description: input.description,
+          content: input.content,
+          startAt: new Date(input.startAt),
+          endAt: input.endAt ? new Date(input.endAt) : undefined,
+          location: input.location,
+          attendeeLimit: input.attendeeLimit,
+          registrationRequired: input.registrationRequired ?? false,
+          registrationFields: input.registrationFields ?? [],
+          createdById: input.createdById
+        },
+        include: { _count: { select: { attendees: true, checkInLogs: true } } }
+      });
     });
 
     return toEventDTO(event);

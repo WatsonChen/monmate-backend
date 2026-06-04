@@ -7,6 +7,7 @@ type AuthTokenPayload = {
   sub: string;
   email: string;
   role: Express.User["role"];
+  assignedEventId?: string | null;
 };
 
 export function requireRole(...roles: Express.User["role"][]) {
@@ -36,7 +37,8 @@ export function requireAuth(
     req.user = {
       id: payload.sub,
       email: payload.email,
-      role: payload.role
+      role: payload.role,
+      assignedEventId: payload.assignedEventId
     };
     return next();
   } catch {

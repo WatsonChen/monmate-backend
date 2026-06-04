@@ -1,9 +1,18 @@
 import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../lib/async-handler.js";
-import { ok } from "../lib/http.js";
+import { ok, AppError } from "../lib/http.js";
 import { requireAuth } from "../middlewares/auth.js";
 import { checkInService } from "../services/check-in.service.js";
+import type { NextFunction, Request, Response } from "express";
+
+function requireStaffOrAdmin(req: Request, _res: Response, next: NextFunction) {
+  if (!req.user) return next(new AppError(401, "UNAUTHORIZED", "請先登入"));
+  if (req.user.role === "STAFF" && req.user.assignedEventId !== req.params.eventId) {
+    return next(new AppError(403, "FORBIDDEN", "無法操作非指派活動"));
+  }
+  return next();
+}
 
 export const checkInRouter = Router({ mergeParams: true });
 
@@ -24,6 +33,7 @@ const selfCheckInSchema = z.object({
 checkInRouter.post(
   "/qr",
   requireAuth,
+  requireStaffOrAdmin,
   asyncHandler(async (req, res) => {
     const body = qrSchema.parse(req.body);
     const result = await checkInService.byQrToken(
@@ -38,6 +48,7 @@ checkInRouter.post(
 checkInRouter.post(
   "/manual",
   requireAuth,
+  requireStaffOrAdmin,
   asyncHandler(async (req, res) => {
     const body = manualSchema.parse(req.body);
     const result = await checkInService.byManualCode(
@@ -65,6 +76,7 @@ checkInRouter.post(
 checkInRouter.get(
   "/logs",
   requireAuth,
+  requireStaffOrAdmin,
   asyncHandler(async (req, res) => {
     const logs = await checkInService.listLogs(req.params.eventId);
     return ok(res, logs);

@@ -145,7 +145,13 @@ export const attendeeService = {
   async completeRegistration(
     eventId: string,
     qrToken: string,
-    input: { name: string; email?: string; age?: number; gender?: "M" | "F" | "OTHER" }
+    input: {
+      name: string;
+      email?: string;
+      age?: number;
+      gender?: "M" | "F" | "OTHER";
+      customFields?: Record<string, string | number>;
+    }
   ) {
     const attendee = await attendeeRepository.findByQrToken(eventId, qrToken);
     if (!attendee) throw new AppError(404, "ATTENDEE_NOT_FOUND", "找不到報名資料，請確認連結是否正確");
@@ -155,7 +161,8 @@ export const attendeeService = {
         name: input.name,
         email: input.email || null,
         age: input.age ?? null,
-        gender: input.gender ?? null
+        gender: input.gender ?? null,
+        customFields: input.customFields ?? null
       },
       select: { id: true, name: true, phone: true, checkInCode: true, qrToken: true, checkInStatus: true }
     });

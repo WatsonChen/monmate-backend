@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
+import bcrypt from "bcryptjs";
 import { asyncHandler } from "../lib/async-handler.js";
-import { ok } from "../lib/http.js";
+import { ok, AppError } from "../lib/http.js";
 import { requireAuth } from "../middlewares/auth.js";
 import { eventService } from "../services/event.service.js";
 import { smsService } from "../services/sms.service.js";
@@ -11,7 +12,10 @@ import { env } from "../config/env.js";
 export const eventRouter = Router();
 
 const registrationFieldSchema = z.array(z.object({
-  key: z.enum(["email", "age", "gender"]),
+  key: z.string().min(1),
+  label: z.string().optional(),
+  type: z.enum(["text", "number", "select"]).optional(),
+  options: z.array(z.string()).optional(),
   required: z.boolean()
 }));
 
@@ -23,6 +27,7 @@ const createEventSchema = z.object({
   startAt: z.string().min(1),
   endAt: z.string().optional(),
   location: z.string().optional(),
+  attendeeLimit: z.number().int().positive().optional(),
   registrationRequired: z.boolean().optional(),
   registrationFields: registrationFieldSchema.optional()
 });
@@ -153,5 +158,58 @@ eventRouter.post(
     );
 
     return ok(res, results);
+  })
+);
+
+// Staff management
+
+const createStaffSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email(),
+  password: z.string().min(6)
+});
+
+eventRouter.get(
+  "/:eventId/staff",
+  asyncHandler(async (req, res) => {
+    const staff = await prisma.user.findMany({
+      where: { assignedEventId: req.params.eventId, role: "STAFF" },
+      select: { id: true, name: true, email: true, createdAt: true }
+    });
+    return ok(res, staff);
+  })
+);
+
+eventRouter.post(
+  "/:eventId/staff",
+  asyncHandler(async (req, res) => {
+    const body = createStaffSchema.parse(req.body);
+    const existing = await prisma.user.findUnique({ where: { email: body.email } });
+    if (existing) throw new AppError(409, "EMAIL_TAKEN", "此 Email 已被使用");
+
+    const passwordHash = await bcrypt.hash(body.password, 10);
+    const staff = await prisma.user.create({
+      data: {
+        name: body.name,
+        email: body.email,
+        passwordHash,
+        role: "STAFF",
+        assignedEventId: req.params.eventId
+      },
+      select: { id: true, name: true, email: true, createdAt: true }
+    });
+    return ok(res, staff, 201);
+  })
+);
+
+eventRouter.delete(
+  "/:eventId/staff/:staffId",
+  asyncHandler(async (req, res) => {
+    const staff = await prisma.user.findUnique({ where: { id: req.params.staffId } });
+    if (!staff || staff.assignedEventId !== req.params.eventId) {
+      throw new AppError(404, "STAFF_NOT_FOUND", "找不到工作人員");
+    }
+    await prisma.user.delete({ where: { id: req.params.staffId } });
+    return ok(res, { id: req.params.staffId });
   })
 );

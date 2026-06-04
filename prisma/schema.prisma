@@ -59,6 +59,8 @@ model User {
   passwordHash    String
   role            UserRole  @default(ADMIN)
   attendeeCredits Int       @default(0)
+  assignedEventId String?
+  assignedEvent   Event?    @relation("EventStaff", fields: [assignedEventId], references: [id], onDelete: SetNull)
   events          Event[]   @relation("EventCreator")
   payments        Payment[]
   createdAt       DateTime  @default(now())
@@ -83,6 +85,7 @@ model Event {
   attendees            Attendee[]
   checkInLogs          CheckInLog[]
   survey               Survey?
+  staffMembers         User[]       @relation("EventStaff")
   createdAt            DateTime     @default(now())
   updatedAt            DateTime     @updatedAt
 }
@@ -100,6 +103,7 @@ model Attendee {
   qrToken         String
   checkInStatus   CheckInStatus    @default(NOT_CHECKED_IN)
   checkedInAt     DateTime?
+  customFields    Json?
   checkInLogs     CheckInLog[]
   surveyResponses SurveyResponse[]
   createdAt       DateTime         @default(now())
