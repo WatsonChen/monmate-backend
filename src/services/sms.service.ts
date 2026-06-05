@@ -9,22 +9,32 @@ export interface SendSmsOptions {
   eventDate: string;
   ticketUrl: string;
   template: SmsTemplate;
+  senderName?: string;
+}
+
+function normalizeTwPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  // 09XXXXXXXX → +8869XXXXXXXX
+  if (/^09\d{8}$/.test(digits)) return `+886${digits.slice(1)}`;
+  // already E.164
+  if (phone.startsWith("+")) return phone;
+  return `+${digits}`;
 }
 
 function buildMessage(opts: SendSmsOptions): string {
+  const tag = opts.senderName?.trim() || "MonMate";
   if (opts.template === "with-registration") {
-    return `【MonMate】${opts.attendeeName} 您好，您已受邀參加「${opts.eventName}」(${opts.eventDate})。請點擊連結完成報名並取得報到 QR Code：${opts.ticketUrl}`;
+    return `【${tag}】${opts.attendeeName} 您好，您已受邀參加「${opts.eventName}」(${opts.eventDate})。請點擊連結完成報名並取得報到 QR Code：${opts.ticketUrl}`;
   }
-  return `【MonMate】${opts.attendeeName} 您好，您已報名「${opts.eventName}」(${opts.eventDate})。報到 QR Code：${opts.ticketUrl}`;
+  return `【${tag}】${opts.attendeeName} 您好，您已報名「${opts.eventName}」(${opts.eventDate})。報到 QR Code：${opts.ticketUrl}`;
 }
 
 async function sendViaTwilio(to: string, body: string): Promise<void> {
-  const accountSid = (env as { TWILIO_ACCOUNT_SID?: string }).TWILIO_ACCOUNT_SID;
-  const authToken = (env as { TWILIO_AUTH_TOKEN?: string }).TWILIO_AUTH_TOKEN;
-  const from = (env as { TWILIO_FROM_PHONE?: string }).TWILIO_FROM_PHONE;
+  const { TWILIO_ACCOUNT_SID: accountSid, TWILIO_AUTH_TOKEN: authToken, TWILIO_FROM_PHONE: from } = env;
 
   if (!accountSid || !authToken || !from) throw new Error("Twilio 環境變數未設定");
 
+  const e164 = normalizeTwPhone(to);
   const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
   const resp = await fetch(url, {
     method: "POST",
@@ -32,9 +42,13 @@ async function sendViaTwilio(to: string, body: string): Promise<void> {
       "Content-Type": "application/x-www-form-urlencoded",
       Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`
     },
-    body: new URLSearchParams({ To: to, From: from, Body: body }).toString()
+    body: new URLSearchParams({ To: e164, From: from, Body: body }).toString()
   });
-  if (!resp.ok) throw new Error(`Twilio error: ${resp.status}`);
+
+  if (!resp.ok) {
+    const detail = await resp.text().catch(() => "");
+    throw new Error(`Twilio error ${resp.status}: ${detail}`);
+  }
 }
 
 export const smsService = {
@@ -42,7 +56,7 @@ export const smsService = {
     const message = buildMessage(opts);
 
     if (env.NODE_ENV !== "production") {
-      console.log(`[SMS Mock] To: ${opts.phone}\n${message}`);
+      console.log(`[SMS Mock] To: ${opts.phone} (→ ${normalizeTwPhone(opts.phone)})\n${message}`);
       return { success: true, message: "已模擬發送（開發模式）", preview: message };
     }
 

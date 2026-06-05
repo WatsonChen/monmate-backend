@@ -133,8 +133,9 @@ eventRouter.get(
 eventRouter.post(
   "/:eventId/invite",
   asyncHandler(async (req, res) => {
-    const { template } = z.object({
-      template: z.enum(["with-registration", "without-registration"])
+    const { template, senderName } = z.object({
+      template: z.enum(["with-registration", "without-registration"]),
+      senderName: z.string().max(20).optional()
     }).parse(req.body);
 
     const event = await eventService.get(req.params.eventId);
@@ -151,7 +152,8 @@ eventRouter.post(
         eventName: event.name,
         eventDate: new Date(event.startAt).toLocaleDateString("zh-TW"),
         ticketUrl: `${webUrl}/event/${event.slug}?token=${a.qrToken}`,
-        template
+        template,
+        senderName
       }))
     );
 
