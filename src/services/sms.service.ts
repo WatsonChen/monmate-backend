@@ -14,11 +14,10 @@ export interface SendSmsOptions {
 
 function normalizeTwPhone(phone: string): string {
   const digits = phone.replace(/\D/g, "");
-  // 09XXXXXXXX → +8869XXXXXXXX
-  if (/^09\d{8}$/.test(digits)) return `+886${digits.slice(1)}`;
-  // already E.164
-  if (phone.startsWith("+")) return phone;
-  return `+${digits}`;
+  if (/^09\d{8}$/.test(digits)) return `09${digits.slice(2)}`;
+  if (/^8869\d{8}$/.test(digits)) return `09${digits.slice(4)}`;
+  if (/^\+8869\d{8}$/.test(phone.replace(/\s/g, ""))) return `09${digits.slice(4)}`;
+  return digits;
 }
 
 function buildMessage(opts: SendSmsOptions): string {
@@ -29,25 +28,22 @@ function buildMessage(opts: SendSmsOptions): string {
   return `【${tag}】${opts.attendeeName} 您好，您已報名「${opts.eventName}」(${opts.eventDate})。報到 QR Code：${opts.ticketUrl}`;
 }
 
-async function sendViaTwilio(to: string, body: string): Promise<void> {
-  const { TWILIO_ACCOUNT_SID: accountSid, TWILIO_AUTH_TOKEN: authToken, TWILIO_FROM_PHONE: from } = env;
+async function sendViaEvery8d(to: string, body: string): Promise<void> {
+  const { EVERY8D_UID: uid, EVERY8D_PWD: pwd } = env;
+  if (!uid || !pwd) throw new Error("every8d 環境變數未設定 (EVERY8D_UID / EVERY8D_PWD)");
 
-  if (!accountSid || !authToken || !from) throw new Error("Twilio 環境變數未設定");
-
-  const e164 = normalizeTwPhone(to);
-  const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
-  const resp = await fetch(url, {
+  const dest = normalizeTwPhone(to);
+  const resp = await fetch("https://api.every8d.com/API21/HTTP/sendSMS.ashx", {
     method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      Authorization: `Basic ${Buffer.from(`${accountSid}:${authToken}`).toString("base64")}`
-    },
-    body: new URLSearchParams({ To: e164, From: from, Body: body }).toString()
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ UID: uid, PWD: pwd, MSG: body, DEST: dest, ST: "" }).toString()
   });
 
-  if (!resp.ok) {
-    const detail = await resp.text().catch(() => "");
-    throw new Error(`Twilio error ${resp.status}: ${detail}`);
+  const text = await resp.text();
+  // every8d returns "CREDIT,SENDED,UNSEND,DETAIL" on success, or negative error code
+  const credit = parseFloat(text.split(",")[0]);
+  if (isNaN(credit) || credit < 0) {
+    throw new Error(`every8d 錯誤：${text.trim()}`);
   }
 }
 
@@ -61,7 +57,7 @@ export const smsService = {
     }
 
     try {
-      await sendViaTwilio(opts.phone, message);
+      await sendViaEvery8d(opts.phone, message);
       return { success: true, message: "簡訊已發送", preview: message };
     } catch (err) {
       console.error("[SMS] 發送失敗:", err);

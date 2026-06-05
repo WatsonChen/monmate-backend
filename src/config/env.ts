@@ -32,9 +32,8 @@ const envSchema = z.object({
     .default("https://core.newebpay.com/MPG/mpg_gateway"),
   NEWEBPAY_VERSION: z.string().default("2.2"),
   GOOGLE_CLIENT_ID: optionalSecret,
-  TWILIO_ACCOUNT_SID: optionalSecret,
-  TWILIO_AUTH_TOKEN: optionalSecret,
-  TWILIO_FROM_PHONE: optionalSecret
+  EVERY8D_UID: optionalSecret,
+  EVERY8D_PWD: optionalSecret
 });
 
 export const env = envSchema.parse(process.env);
