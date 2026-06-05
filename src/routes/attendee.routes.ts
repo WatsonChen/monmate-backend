@@ -13,7 +13,7 @@ import { env } from "../config/env.js";
 
 export const attendeeRouter = Router({ mergeParams: true });
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 attendeeRouter.get(
   "/ticket",
@@ -55,11 +55,23 @@ attendeeRouter.get(
 );
 
 attendeeRouter.post(
+  "/",
+  asyncHandler(async (req, res) => {
+    const body = z.object({
+      name: z.string().min(1, "姓名不能為空"),
+      phone: z.string().min(1, "電話不能為空")
+    }).parse(req.body);
+    const attendee = await attendeeService.createSingle(req.params.eventId, req.user!.id, body);
+    return ok(res, attendee, 201);
+  })
+);
+
+attendeeRouter.post(
   "/import",
   upload.single("file") as never,
   asyncHandler(async (req, res) => {
-    if (!req.file) throw new AppError(400, "FILE_REQUIRED", "請上傳 Excel 檔案");
-    const result = await attendeeService.importFromExcel(req.params.eventId, req.file.buffer, req.user!.id);
+    if (!req.file) throw new AppError(400, "FILE_REQUIRED", "請上傳檔案");
+    const result = await attendeeService.importFromFile(req.params.eventId, req.file.buffer, req.user!.id);
     return ok(res, result, 201);
   })
 );
@@ -67,6 +79,17 @@ attendeeRouter.post(
 attendeeRouter.get(
   "/export",
   asyncHandler(async (req, res) => {
+    const { format } = z.object({
+      format: z.enum(["csv", "xlsx"]).default("csv")
+    }).parse(req.query);
+
+    if (format === "xlsx") {
+      const buf = await attendeeService.exportXlsx(req.params.eventId);
+      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+      res.setHeader("Content-Disposition", `attachment; filename="monmate-attendees-${req.params.eventId}.xlsx"`);
+      return res.send(buf);
+    }
+
     const csv = await attendeeService.exportCsv(req.params.eventId);
     res.setHeader("Content-Type", "text/csv; charset=utf-8");
     res.setHeader("Content-Disposition", `attachment; filename="monmate-attendees-${req.params.eventId}.csv"`);

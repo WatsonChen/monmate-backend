@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { CheckInLogStatus, CheckInStatus, Gender } from "@prisma/client";
+import * as XLSX from "xlsx";
 import { toCsvCell } from "@monmate/utils";
-import readXlsxFile from "read-excel-file/node";
 import { AppError } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
 import { attendeeRepository } from "../repositories/attendee.repository.js";
@@ -40,37 +40,62 @@ export const attendeeService = {
     return attendee;
   },
 
-  async importFromExcel(eventId: string, fileBuffer: Buffer, userId: string) {
+  async createSingle(eventId: string, userId: string, input: { name: string; phone: string }) {
+    await eventService.get(eventId);
+    const checkInCode = createCheckInCode(0);
+    const qrToken = createQrToken();
+
+    return prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({ where: { id: userId }, select: { attendeeCredits: true } });
+      if (!user) throw new AppError(404, "USER_NOT_FOUND", "找不到使用者");
+      if (user.attendeeCredits < 1) {
+        throw new AppError(402, "INSUFFICIENT_ATTENDEE_CREDITS", "報到人數額度不足，請購買額度。");
+      }
+      await tx.user.update({ where: { id: userId }, data: { attendeeCredits: { decrement: 1 } } });
+      return tx.attendee.create({
+        data: { eventId, name: input.name.trim(), phone: input.phone.trim(), checkInCode, qrToken },
+        select: { id: true, eventId: true, name: true, phone: true, checkInCode: true, qrToken: true, checkInStatus: true, checkedInAt: true }
+      });
+    });
+  },
+
+  async importFromFile(eventId: string, fileBuffer: Buffer, userId: string) {
     await eventService.get(eventId);
 
-    const rows = await readXlsxFile(fileBuffer);
+    const workbook = XLSX.read(fileBuffer, { type: "buffer", cellText: false, cellDates: true });
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 });
+
     if (rows.length < 2) throw new AppError(400, "EMPTY_IMPORT", "匯入檔案沒有資料");
 
-    const header = rows[0].map((cell) => String(cell ?? "").trim().toLowerCase());
+    const header = (rows[0] as unknown[]).map((cell) => String(cell ?? "").trim().toLowerCase());
     const col = (names: string[]) => header.findIndex((h) => names.includes(h));
 
-    const nameIdx = col(["name", "姓名"]);
+    const nameIdx  = col(["name", "姓名"]);
     const phoneIdx = col(["phone", "電話", "手機"]);
     const emailIdx = col(["email", "信箱"]);
-    const ageIdx = col(["age", "年齡"]);
+    const ageIdx   = col(["age", "年齡"]);
     const genderIdx = col(["gender", "性別"]);
 
     if (nameIdx < 0 || phoneIdx < 0) {
-      throw new AppError(400, "INVALID_COLUMNS", "Excel 需包含姓名與電話欄位");
+      throw new AppError(400, "INVALID_COLUMNS", "檔案需包含「姓名」與「電話」欄位");
     }
 
     const attendees = rows
       .slice(1)
-      .map((row, index) => ({
-        eventId,
-        name: String(row[nameIdx] ?? "").trim(),
-        phone: String(row[phoneIdx] ?? "").trim(),
-        email: emailIdx >= 0 ? (String(row[emailIdx] ?? "").trim() || undefined) : undefined,
-        age: ageIdx >= 0 ? (Number(row[ageIdx]) || undefined) : undefined,
-        gender: genderIdx >= 0 ? parseGender(String(row[genderIdx] ?? "")) : undefined,
-        checkInCode: createCheckInCode(index),
-        qrToken: createQrToken()
-      }))
+      .map((row, index) => {
+        const r = row as unknown[];
+        return {
+          eventId,
+          name:  String(r[nameIdx]  ?? "").trim(),
+          phone: String(r[phoneIdx] ?? "").trim(),
+          email:   emailIdx  >= 0 ? (String(r[emailIdx]  ?? "").trim() || undefined) : undefined,
+          age:     ageIdx    >= 0 ? (Number(r[ageIdx])   || undefined) : undefined,
+          gender:  genderIdx >= 0 ? parseGender(String(r[genderIdx] ?? "")) : undefined,
+          checkInCode: createCheckInCode(index),
+          qrToken: createQrToken()
+        };
+      })
       .filter((row) => row.name && row.phone);
 
     if (attendees.length === 0) throw new AppError(400, "EMPTY_IMPORT", "沒有有效的報名資料");
@@ -85,12 +110,7 @@ export const attendeeService = {
           `報到人數額度不足。需要 ${attendees.length} 個額度，目前剩餘 ${user.attendeeCredits} 個。`
         );
       }
-
-      await tx.user.update({
-        where: { id: userId },
-        data: { attendeeCredits: { decrement: attendees.length } }
-      });
-
+      await tx.user.update({ where: { id: userId }, data: { attendeeCredits: { decrement: attendees.length } } });
       await tx.attendee.createMany({ data: attendees });
     });
 
@@ -98,6 +118,19 @@ export const attendeeService = {
   },
 
   async exportCsv(eventId: string) {
+    const { header, rows } = await this._buildExportData(eventId);
+    return [header, ...rows].map((row) => row.map(toCsvCell).join(",")).join("\n");
+  },
+
+  async exportXlsx(eventId: string): Promise<Buffer> {
+    const { header, rows } = await this._buildExportData(eventId);
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Attendees");
+    return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  },
+
+  async _buildExportData(eventId: string) {
     const attendees = await attendeeRepository.list(eventId);
     const successLogs = await prisma.checkInLog.findMany({
       where: { eventId, status: CheckInLogStatus.SUCCESS },
@@ -116,7 +149,7 @@ export const attendeeService = {
       a.checkedInAt?.toISOString() ?? "",
       latestMethod.get(a.id) ?? ""
     ]);
-    return [header, ...rows].map((row) => row.map(toCsvCell).join(",")).join("\n");
+    return { header, rows };
   },
 
   async update(
@@ -155,7 +188,7 @@ export const attendeeService = {
   ) {
     const attendee = await attendeeRepository.findByQrToken(eventId, qrToken);
     if (!attendee) throw new AppError(404, "ATTENDEE_NOT_FOUND", "找不到報名資料，請確認連結是否正確");
-    const updated = await prisma.attendee.update({
+    return prisma.attendee.update({
       where: { id: attendee.id },
       data: {
         name: input.name,
@@ -166,6 +199,5 @@ export const attendeeService = {
       },
       select: { id: true, name: true, phone: true, checkInCode: true, qrToken: true, checkInStatus: true }
     });
-    return updated;
   }
 };
