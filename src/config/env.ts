@@ -31,7 +31,9 @@ const envSchema = z.object({
     .url()
     .default("https://core.newebpay.com/MPG/mpg_gateway"),
   NEWEBPAY_VERSION: z.string().default("2.2"),
-  GOOGLE_CLIENT_ID: optionalSecret
+  GOOGLE_CLIENT_ID: optionalSecret,
+  RESEND_API_KEY: optionalSecret,
+  EMAIL_FROM: z.string().default("MonMate <noreply@monmate.app>")
 });
 
 export const env = envSchema.parse(process.env);
