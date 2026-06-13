@@ -35,6 +35,10 @@ export const checkInService = {
     return this.checkIn(eventId, CheckInMethod.MANUAL_CODE, checkInCode);
   },
 
+  async byPhone(eventId: string, phone: string) {
+    return this.checkIn(eventId, CheckInMethod.PHONE, phone);
+  },
+
   async bySelfCheckIn(eventId: string, venueCode: string, credential: { phone: string } | { checkInCode: string }) {
     const event = await prisma.event.findUnique({ where: { id: eventId }, select: { venueCode: true } });
     if (!event || event.venueCode !== venueCode) {

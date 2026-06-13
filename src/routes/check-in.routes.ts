@@ -24,6 +24,10 @@ const manualSchema = z.object({
   checkInCode: z.string().min(1)
 });
 
+const phoneSchema = z.object({
+  phone: z.string().min(1)
+});
+
 const selfCheckInSchema = z.object({
   venueCode: z.string().min(1)
 }).and(
@@ -58,6 +62,21 @@ checkInRouter.post(
     const result = await checkInService.byManualCode(
       req.params.eventId,
       body.checkInCode
+    );
+    return ok(res, result);
+  })
+);
+
+// 工作人員後台用：電話號碼查詢
+checkInRouter.post(
+  "/phone",
+  requireAuth,
+  requireStaffOrAdmin,
+  asyncHandler(async (req, res) => {
+    const body = phoneSchema.parse(req.body);
+    const result = await checkInService.byPhone(
+      req.params.eventId,
+      body.phone
     );
     return ok(res, result);
   })
