@@ -1,0 +1,1 @@
+ALTER TABLE "Attendee" ADD COLUMN "note" TEXT;

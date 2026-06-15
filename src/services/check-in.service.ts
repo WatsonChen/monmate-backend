@@ -19,7 +19,9 @@ function buildResult(status: CheckInLogStatus, attendee?: Awaited<ReturnType<typ
           phone: attendee.phone,
           phoneLastThree: getPhoneLastThree(attendee.phone),
           checkInStatus: attendee.checkInStatus,
-          checkedInAt: attendee.checkedInAt?.toISOString() ?? null
+          checkedInAt: attendee.checkedInAt?.toISOString() ?? null,
+          customFields: (attendee.customFields as Record<string, string> | null) ?? null,
+          note: attendee.note ?? null
         }
       : undefined,
     checkedInAt: attendee?.checkedInAt?.toISOString()

@@ -68,7 +68,8 @@ export const attendeeService = {
 
     if (rows.length < 2) throw new AppError(400, "EMPTY_IMPORT", "匯入檔案沒有資料");
 
-    const header = (rows[0] as unknown[]).map((cell) => String(cell ?? "").trim().toLowerCase());
+    const rawHeader = (rows[0] as unknown[]).map((cell) => String(cell ?? "").trim());
+    const header = rawHeader.map((h) => h.toLowerCase());
     const col = (names: string[]) => header.findIndex((h) => names.includes(h));
 
     const nameIdx  = col(["name", "姓名"]);
@@ -81,10 +82,20 @@ export const attendeeService = {
       throw new AppError(400, "INVALID_COLUMNS", "檔案需包含「姓名」與「電話」欄位");
     }
 
+    const knownIdx = new Set([nameIdx, phoneIdx, emailIdx, ageIdx, genderIdx].filter((i) => i >= 0));
+    const extraCols = rawHeader
+      .map((label, i) => ({ label, i }))
+      .filter(({ i }) => !knownIdx.has(i) && rawHeader[i]);
+
     const attendees = rows
       .slice(1)
       .map((row, index) => {
         const r = row as unknown[];
+        const customFields: Record<string, string> = {};
+        for (const { label, i } of extraCols) {
+          const val = String(r[i] ?? "").trim();
+          if (val) customFields[label] = val;
+        }
         return {
           eventId,
           name:  String(r[nameIdx]  ?? "").trim(),
@@ -92,6 +103,7 @@ export const attendeeService = {
           email:   emailIdx  >= 0 ? (String(r[emailIdx]  ?? "").trim() || undefined) : undefined,
           age:     ageIdx    >= 0 ? (Number(r[ageIdx])   || undefined) : undefined,
           gender:  genderIdx >= 0 ? parseGender(String(r[genderIdx] ?? "")) : undefined,
+          customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
           checkInCode: createCheckInCode(index),
           qrToken: createQrToken()
         };

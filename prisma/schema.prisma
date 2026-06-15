@@ -105,6 +105,7 @@ model Attendee {
   checkInStatus   CheckInStatus    @default(NOT_CHECKED_IN)
   checkedInAt     DateTime?
   customFields    Json?
+  note            String?
   checkInLogs     CheckInLog[]
   surveyResponses SurveyResponse[]
   createdAt       DateTime         @default(now())

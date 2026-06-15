@@ -104,7 +104,8 @@ attendeeRouter.patch(
       name: z.string().min(1).optional(),
       phone: z.string().min(1).optional(),
       checkInStatus: z.nativeEnum(CheckInStatus).optional(),
-      checkedInAt: z.string().nullable().optional()
+      checkedInAt: z.string().nullable().optional(),
+      note: z.string().nullable().optional()
     }).parse(req.body);
     const attendee = await attendeeService.update(req.params.eventId, req.params.attendeeId, body);
     return ok(res, attendee);
