@@ -104,8 +104,10 @@ model Attendee {
   qrToken         String
   checkInStatus   CheckInStatus    @default(NOT_CHECKED_IN)
   checkedInAt     DateTime?
-  customFields    Json?
-  note            String?
+  customFields      Json?
+  note              String?
+  checkInCapacity   Int              @default(1)
+  checkInCount      Int              @default(0)
   checkInLogs     CheckInLog[]
   surveyResponses SurveyResponse[]
   createdAt       DateTime         @default(now())

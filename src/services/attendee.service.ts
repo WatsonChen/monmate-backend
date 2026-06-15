@@ -40,10 +40,11 @@ export const attendeeService = {
     return attendee;
   },
 
-  async createSingle(eventId: string, userId: string, input: { name: string; phone: string }) {
+  async createSingle(eventId: string, userId: string, input: { name: string; phone: string; capacity?: number }) {
     await eventService.get(eventId);
     const checkInCode = createCheckInCode(0);
     const qrToken = createQrToken();
+    const checkInCapacity = Math.max(1, input.capacity ?? 1);
 
     return prisma.$transaction(async (tx) => {
       const user = await tx.user.findUnique({ where: { id: userId }, select: { attendeeCredits: true } });
@@ -53,8 +54,8 @@ export const attendeeService = {
       }
       await tx.user.update({ where: { id: userId }, data: { attendeeCredits: { decrement: 1 } } });
       return tx.attendee.create({
-        data: { eventId, name: input.name.trim(), phone: input.phone.trim(), checkInCode, qrToken },
-        select: { id: true, eventId: true, name: true, phone: true, checkInCode: true, qrToken: true, checkInStatus: true, checkedInAt: true }
+        data: { eventId, name: input.name.trim(), phone: input.phone.trim(), checkInCapacity, checkInCode, qrToken },
+        select: { id: true, eventId: true, name: true, phone: true, checkInCode: true, qrToken: true, checkInStatus: true, checkedInAt: true, checkInCapacity: true, checkInCount: true }
       });
     });
   },
@@ -87,6 +88,17 @@ export const attendeeService = {
       .map((label, i) => ({ label, i }))
       .filter(({ i }) => !knownIdx.has(i) && rawHeader[i]);
 
+    function parseCapacity(customFields: Record<string, string>): number {
+      for (const val of Object.values(customFields)) {
+        const m = val.match(/(\d+)/);
+        if (m) return parseInt(m[1]) + 1;
+      }
+      return 1;
+    }
+
+    // 判斷哪欄是攜伴欄（欄名含「攜伴」「companion」）
+    const companionColIdx = rawHeader.findIndex((h) => /攜伴|companion/i.test(h));
+
     const attendees = rows
       .slice(1)
       .map((row, index) => {
@@ -96,6 +108,9 @@ export const attendeeService = {
           const val = String(r[i] ?? "").trim();
           if (val) customFields[label] = val;
         }
+        const checkInCapacity = companionColIdx >= 0
+          ? parseCapacity({ _: String(r[companionColIdx] ?? "").trim() })
+          : 1;
         return {
           eventId,
           name:  String(r[nameIdx]  ?? "").trim(),
@@ -104,6 +119,7 @@ export const attendeeService = {
           age:     ageIdx    >= 0 ? (Number(r[ageIdx])   || undefined) : undefined,
           gender:  genderIdx >= 0 ? parseGender(String(r[genderIdx] ?? "")) : undefined,
           customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
+          checkInCapacity,
           checkInCode: createCheckInCode(index),
           qrToken: createQrToken()
         };

@@ -59,7 +59,8 @@ attendeeRouter.post(
   asyncHandler(async (req, res) => {
     const body = z.object({
       name: z.string().min(1, "姓名不能為空"),
-      phone: z.string().min(1, "電話不能為空")
+      phone: z.string().min(1, "電話不能為空"),
+      capacity: z.coerce.number().int().min(1).max(20).optional()
     }).parse(req.body);
     const attendee = await attendeeService.createSingle(req.params.eventId, req.user!.id, body);
     return ok(res, attendee, 201);
