@@ -4,12 +4,20 @@ import { asyncHandler } from "../lib/async-handler.js";
 import { ok, AppError } from "../lib/http.js";
 import { requireAuth } from "../middlewares/auth.js";
 import { checkInService } from "../services/check-in.service.js";
+import { prisma } from "../lib/prisma.js";
 import type { NextFunction, Request, Response } from "express";
 
-function requireStaffOrAdmin(req: Request, _res: Response, next: NextFunction) {
+// JWT 裡的 assignedEventId 可能是舊 token 導致為 null，
+// 此時從 DB 取最新值，避免要求使用者重新登入。
+async function requireStaffOrAdmin(req: Request, _res: Response, next: NextFunction) {
   if (!req.user) return next(new AppError(401, "UNAUTHORIZED", "請先登入"));
-  if (req.user.role === "STAFF" && req.user.assignedEventId !== req.params.eventId) {
-    return next(new AppError(403, "FORBIDDEN", "無法操作非指派活動"));
+  if (req.user.role === "STAFF") {
+    const assignedEventId = req.user.assignedEventId
+      ?? (await prisma.user.findUnique({ where: { id: req.user.id }, select: { assignedEventId: true } }))?.assignedEventId
+      ?? null;
+    if (assignedEventId !== req.params.eventId) {
+      return next(new AppError(403, "FORBIDDEN", "無法操作非指派活動"));
+    }
   }
   return next();
 }
