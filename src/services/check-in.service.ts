@@ -9,7 +9,7 @@ import { attendeeRepository } from "../repositories/attendee.repository.js";
 import { checkInRepository } from "../repositories/check-in.repository.js";
 import { AppError } from "../lib/http.js";
 
-function buildAttendeePayload(attendee: Awaited<ReturnType<typeof attendeeRepository.findById>>) {
+function buildAttendeePayload(attendee?: Awaited<ReturnType<typeof attendeeRepository.findById>>) {
   if (!attendee) return undefined;
   return {
     id: attendee.id,
