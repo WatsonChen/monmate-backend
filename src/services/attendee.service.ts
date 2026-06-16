@@ -83,21 +83,25 @@ export const attendeeService = {
       throw new AppError(400, "INVALID_COLUMNS", "檔案需包含「姓名」與「電話」欄位");
     }
 
-    const knownIdx = new Set([nameIdx, phoneIdx, emailIdx, ageIdx, genderIdx].filter((i) => i >= 0));
+    // 偵測人數欄：攜伴人數（需+1）或報名人數（直接用）
+    const capacityColIdx = rawHeader.findIndex((h) =>
+      /攜伴|companion|報名人數|參加人數|人數/i.test(h)
+    );
+    const isCompanionCol = capacityColIdx >= 0 && /攜伴|companion/i.test(rawHeader[capacityColIdx]);
+
+    function parseCapacityValue(raw: string, isCompanion: boolean): number {
+      const n = parseInt(raw, 10);
+      if (isNaN(n) || n <= 0) return 1;
+      // 攜伴人數欄：加本人；報名人數欄：直接使用
+      return isCompanion ? n + 1 : n;
+    }
+
+    const knownIdx = new Set(
+      [nameIdx, phoneIdx, emailIdx, ageIdx, genderIdx, capacityColIdx].filter((i) => i >= 0)
+    );
     const extraCols = rawHeader
       .map((label, i) => ({ label, i }))
       .filter(({ i }) => !knownIdx.has(i) && rawHeader[i]);
-
-    function parseCapacity(customFields: Record<string, string>): number {
-      for (const val of Object.values(customFields)) {
-        const m = val.match(/(\d+)/);
-        if (m) return parseInt(m[1]) + 1;
-      }
-      return 1;
-    }
-
-    // 判斷哪欄是攜伴欄（欄名含「攜伴」「companion」）
-    const companionColIdx = rawHeader.findIndex((h) => /攜伴|companion/i.test(h));
 
     const attendees = rows
       .slice(1)
@@ -108,8 +112,8 @@ export const attendeeService = {
           const val = String(r[i] ?? "").trim();
           if (val) customFields[label] = val;
         }
-        const checkInCapacity = companionColIdx >= 0
-          ? parseCapacity({ _: String(r[companionColIdx] ?? "").trim() })
+        const checkInCapacity = capacityColIdx >= 0
+          ? parseCapacityValue(String(r[capacityColIdx] ?? "").trim(), isCompanionCol)
           : 1;
         return {
           eventId,
