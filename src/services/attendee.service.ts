@@ -133,17 +133,33 @@ export const attendeeService = {
     if (attendees.length === 0) throw new AppError(400, "EMPTY_IMPORT", "沒有有效的報名資料");
 
     await prisma.$transaction(async (tx) => {
+      const existingPhoneMap = new Map(
+        (await tx.attendee.findMany({ where: { eventId, phone: { in: attendees.map((a) => a.phone) } }, select: { id: true, phone: true } }))
+          .map((a) => [a.phone, a.id])
+      );
+
+      const toCreate = attendees.filter((a) => !existingPhoneMap.has(a.phone));
+      const toUpdate = attendees.filter((a) => existingPhoneMap.has(a.phone));
+
       const user = await tx.user.findUnique({ where: { id: userId }, select: { attendeeCredits: true } });
       if (!user) throw new AppError(404, "USER_NOT_FOUND", "找不到使用者");
-      if (user.attendeeCredits < attendees.length) {
+      if (user.attendeeCredits < toCreate.length) {
         throw new AppError(
           402,
           "INSUFFICIENT_ATTENDEE_CREDITS",
-          `報到人數額度不足。需要 ${attendees.length} 個額度，目前剩餘 ${user.attendeeCredits} 個。`
+          `報到人數額度不足。需要 ${toCreate.length} 個額度，目前剩餘 ${user.attendeeCredits} 個。`
         );
       }
-      await tx.user.update({ where: { id: userId }, data: { attendeeCredits: { decrement: attendees.length } } });
-      await tx.attendee.createMany({ data: attendees });
+      if (toCreate.length > 0) {
+        await tx.user.update({ where: { id: userId }, data: { attendeeCredits: { decrement: toCreate.length } } });
+        await tx.attendee.createMany({ data: toCreate });
+      }
+      for (const a of toUpdate) {
+        await tx.attendee.update({
+          where: { id: existingPhoneMap.get(a.phone)! },
+          data: { checkInCapacity: a.checkInCapacity, customFields: a.customFields ?? undefined }
+        });
+      }
     });
 
     return { imported: attendees.length };
@@ -171,15 +187,19 @@ export const attendeeService = {
     const latestMethod = new Map(
       successLogs.filter((l) => l.attendeeId).map((l) => [l.attendeeId, l.method])
     );
-    const header = ["姓名", "電話", "Email", "年齡", "性別", "報到狀態", "報到時間", "報到方式"];
+    const header = ["姓名", "電話", "Email", "年齡", "性別", "報到碼", "預期人數", "實際報到人數", "報到狀態", "報到時間", "報到方式", "備註"];
     const rows = attendees.map((a) => [
       a.name, a.phone,
       (a as { email?: string | null }).email ?? "",
       (a as { age?: number | null }).age ?? "",
       (a as { gender?: string | null }).gender ?? "",
+      a.checkInCode,
+      a.checkInCapacity,
+      a.checkInCount,
       a.checkInStatus,
       a.checkedInAt?.toISOString() ?? "",
-      latestMethod.get(a.id) ?? ""
+      latestMethod.get(a.id) ?? "",
+      a.note ?? ""
     ]);
     return { header, rows };
   },
@@ -195,6 +215,9 @@ export const attendeeService = {
       gender: Gender | null;
       checkInStatus: CheckInStatus;
       checkedInAt: string | null;
+      checkInCapacity: number;
+      checkInCount: number;
+      note: string | null;
     }>
   ) {
     const attendee = await attendeeRepository.findById(attendeeId);
@@ -203,7 +226,10 @@ export const attendeeService = {
       name: input.name,
       phone: input.phone,
       checkInStatus: input.checkInStatus,
-      checkedInAt: input.checkedInAt === null ? null : input.checkedInAt ? new Date(input.checkedInAt) : undefined
+      checkedInAt: input.checkedInAt === null ? null : input.checkedInAt ? new Date(input.checkedInAt) : undefined,
+      checkInCapacity: input.checkInCapacity,
+      checkInCount: input.checkInCount,
+      note: input.note === undefined ? undefined : input.note
     });
   },
 
