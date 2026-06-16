@@ -14,17 +14,22 @@ function requireStaffOrAdmin(req: Request, _res: Response, next: NextFunction) {
   if (!req.user) return next(new AppError(401, "UNAUTHORIZED", "請先登入"));
   if (req.user.role !== "STAFF") return next();
 
-  // STAFF: 從 JWT 取 assignedEventId，若 JWT 是舊格式（null）再查 DB
+  // STAFF: 舊 token 仍可能只有 assignedEventId，先快速相容，再查多活動指派表。
   const fromJwt = req.user.assignedEventId ?? null;
   if (fromJwt !== null) {
-    if (fromJwt !== req.params.eventId) return next(new AppError(403, "FORBIDDEN", "無法操作非指派活動"));
-    return next();
+    if (fromJwt === req.params.eventId) return next();
   }
 
-  // JWT 無值 → 查 DB（兼容舊 token）
-  prisma.user.findUnique({ where: { id: req.user.id }, select: { assignedEventId: true } })
-    .then((u) => {
-      if ((u?.assignedEventId ?? null) !== req.params.eventId) {
+  prisma.eventStaffAssignment.findUnique({
+    where: { eventId_userId: { eventId: req.params.eventId, userId: req.user.id } }
+  })
+    .then(async (assignment) => {
+      if (assignment) return next();
+      const user = await prisma.user.findUnique({
+        where: { id: req.user!.id },
+        select: { assignedEventId: true }
+      });
+      if ((user?.assignedEventId ?? null) !== req.params.eventId) {
         return next(new AppError(403, "FORBIDDEN", "無法操作非指派活動"));
       }
       return next();

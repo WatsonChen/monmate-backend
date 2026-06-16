@@ -62,6 +62,7 @@ model User {
   attendeeCredits Int       @default(0)
   assignedEventId String?
   assignedEvent   Event?    @relation("EventStaff", fields: [assignedEventId], references: [id], onDelete: SetNull)
+  staffAssignments EventStaffAssignment[]
   events          Event[]   @relation("EventCreator")
   payments        Payment[]
   createdAt       DateTime  @default(now())
@@ -87,8 +88,21 @@ model Event {
   checkInLogs          CheckInLog[]
   survey               Survey?
   staffMembers         User[]       @relation("EventStaff")
+  staffAssignments     EventStaffAssignment[]
   createdAt            DateTime     @default(now())
   updatedAt            DateTime     @updatedAt
+}
+
+model EventStaffAssignment {
+  id        String   @id @default(cuid())
+  eventId   String
+  event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([eventId, userId])
+  @@index([userId])
 }
 
 model Attendee {

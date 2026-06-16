@@ -15,13 +15,22 @@ export const authService = {
       throw new AppError(401, "INVALID_CREDENTIALS", "帳號或密碼錯誤");
     }
 
+    const assignedEventIds = user.role === "STAFF"
+      ? await prisma.eventStaffAssignment.findMany({
+          where: { userId: user.id },
+          select: { eventId: true },
+          orderBy: { createdAt: "desc" }
+        })
+      : [];
+    const primaryAssignedEventId = user.assignedEventId ?? assignedEventIds[0]?.eventId ?? null;
+
     const signOptions: SignOptions = {
       subject: user.id,
       expiresIn: env.JWT_EXPIRES_IN as SignOptions["expiresIn"]
     };
 
     const token = jwt.sign(
-      { email: user.email, role: user.role, assignedEventId: user.assignedEventId ?? null },
+      { email: user.email, role: user.role, assignedEventId: primaryAssignedEventId },
       env.JWT_SECRET,
       signOptions
     );
@@ -34,7 +43,8 @@ export const authService = {
         email: user.email,
         role: user.role,
         attendeeCredits: user.attendeeCredits,
-        assignedEventId: user.assignedEventId ?? null
+        assignedEventId: primaryAssignedEventId,
+        assignedEventIds: assignedEventIds.map((assignment) => assignment.eventId)
       }
     };
   },
@@ -103,13 +113,23 @@ export const authService = {
       throw new AppError(404, "USER_NOT_FOUND", "找不到使用者");
     }
 
+    const assignedEventIds = user.role === "STAFF"
+      ? await prisma.eventStaffAssignment.findMany({
+          where: { userId: user.id },
+          select: { eventId: true },
+          orderBy: { createdAt: "desc" }
+        })
+      : [];
+    const primaryAssignedEventId = user.assignedEventId ?? assignedEventIds[0]?.eventId ?? null;
+
     return {
       id: user.id,
       name: user.name,
       email: user.email,
       role: user.role,
       attendeeCredits: user.attendeeCredits,
-      assignedEventId: user.assignedEventId ?? null
+      assignedEventId: primaryAssignedEventId,
+      assignedEventIds: assignedEventIds.map((assignment) => assignment.eventId)
     };
   }
 };

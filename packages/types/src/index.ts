@@ -11,7 +11,7 @@ export type ApiResponse<T> = {
 
 export type UserRole = "OWNER" | "ADMIN" | "STAFF";
 export type CheckInStatus = "NOT_CHECKED_IN" | "CHECKED_IN";
-export type CheckInMethod = "QR_CODE" | "MANUAL_CODE";
+export type CheckInMethod = "QR_CODE" | "MANUAL_CODE" | "PHONE";
 export type CheckInLogStatus =
   | "SUCCESS"
   | "ALREADY_CHECKED_IN"
@@ -32,6 +32,9 @@ export type UserDTO = {
   email: string;
   role: UserRole;
   eventCredits: number;
+  attendeeCredits?: number;
+  assignedEventId?: string | null;
+  assignedEventIds?: string[];
 };
 
 export type EventDTO = {
@@ -58,13 +61,17 @@ export type AttendeeDTO = {
   qrToken: string;
   checkInStatus: CheckInStatus;
   checkedInAt?: string | null;
+  customFields?: Record<string, string | number | null> | null;
+  note?: string | null;
+  checkInCapacity?: number;
+  checkInCount?: number;
 };
 
 export type CheckInResultDTO = {
   status: CheckInLogStatus;
   attendee?: Pick<
     AttendeeDTO,
-    "id" | "name" | "phone" | "checkInStatus" | "checkedInAt"
+    "id" | "name" | "phone" | "checkInStatus" | "checkedInAt" | "customFields" | "note" | "checkInCapacity" | "checkInCount"
   > & {
     phoneLastThree: string;
   };

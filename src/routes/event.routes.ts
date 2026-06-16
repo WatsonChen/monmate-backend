@@ -172,10 +172,19 @@ const createStaffSchema = z.object({
 eventRouter.get(
   "/:eventId/staff",
   asyncHandler(async (req, res) => {
-    const staff = await prisma.user.findMany({
-      where: { assignedEventId: req.params.eventId, role: "STAFF" },
-      select: { id: true, name: true, email: true, createdAt: true }
+    const assignments = await prisma.eventStaffAssignment.findMany({
+      where: { eventId: req.params.eventId },
+      include: {
+        user: { select: { id: true, name: true, email: true } }
+      },
+      orderBy: { createdAt: "desc" }
     });
+    const staff = assignments.map((assignment) => ({
+      id: assignment.user.id,
+      name: assignment.user.name,
+      email: assignment.user.email,
+      createdAt: assignment.createdAt
+    }));
     return ok(res, staff);
   })
 );
@@ -185,18 +194,47 @@ eventRouter.post(
   asyncHandler(async (req, res) => {
     const body = createStaffSchema.parse(req.body);
     const existing = await prisma.user.findUnique({ where: { email: body.email } });
-    if (existing) throw new AppError(409, "EMAIL_TAKEN", "此 Email 已被使用");
+    if (existing && existing.role !== "STAFF") {
+      throw new AppError(409, "EMAIL_TAKEN", "此 Email 已是主辦帳號，無法設為工作人員");
+    }
 
-    const passwordHash = await bcrypt.hash(body.password, 10);
-    const staff = await prisma.user.create({
-      data: {
-        name: body.name,
-        email: body.email,
-        passwordHash,
-        role: "STAFF",
-        assignedEventId: req.params.eventId
-      },
-      select: { id: true, name: true, email: true, createdAt: true }
+    const existingAssignment = existing
+      ? await prisma.eventStaffAssignment.findUnique({
+          where: { eventId_userId: { eventId: req.params.eventId, userId: existing.id } }
+        })
+      : null;
+    if (existingAssignment) {
+      throw new AppError(409, "STAFF_ALREADY_ASSIGNED", "此 Email 已是本活動工作人員");
+    }
+
+    const staff = await prisma.$transaction(async (tx) => {
+      const user = existing ?? await tx.user.create({
+        data: {
+          name: body.name,
+          email: body.email,
+          passwordHash: await bcrypt.hash(body.password, 10),
+          role: "STAFF",
+          assignedEventId: req.params.eventId
+        }
+      });
+
+      if (existing && !existing.assignedEventId) {
+        await tx.user.update({
+          where: { id: existing.id },
+          data: { assignedEventId: req.params.eventId }
+        });
+      }
+
+      const assignment = await tx.eventStaffAssignment.create({
+        data: { eventId: req.params.eventId, userId: user.id }
+      });
+
+      return {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        createdAt: assignment.createdAt
+      };
     });
     return ok(res, staff, 201);
   })
@@ -205,11 +243,30 @@ eventRouter.post(
 eventRouter.delete(
   "/:eventId/staff/:staffId",
   asyncHandler(async (req, res) => {
-    const staff = await prisma.user.findUnique({ where: { id: req.params.staffId } });
-    if (!staff || staff.assignedEventId !== req.params.eventId) {
+    const assignment = await prisma.eventStaffAssignment.findUnique({
+      where: { eventId_userId: { eventId: req.params.eventId, userId: req.params.staffId } },
+      include: { user: { select: { assignedEventId: true } } }
+    });
+    if (!assignment) {
       throw new AppError(404, "STAFF_NOT_FOUND", "找不到工作人員");
     }
-    await prisma.user.delete({ where: { id: req.params.staffId } });
+    await prisma.$transaction(async (tx) => {
+      await tx.eventStaffAssignment.delete({
+        where: { eventId_userId: { eventId: req.params.eventId, userId: req.params.staffId } }
+      });
+
+      if (assignment.user.assignedEventId === req.params.eventId) {
+        const nextAssignment = await tx.eventStaffAssignment.findFirst({
+          where: { userId: req.params.staffId },
+          orderBy: { createdAt: "desc" },
+          select: { eventId: true }
+        });
+        await tx.user.update({
+          where: { id: req.params.staffId },
+          data: { assignedEventId: nextAssignment?.eventId ?? null }
+        });
+      }
+    });
     return ok(res, { id: req.params.staffId });
   })
 );
