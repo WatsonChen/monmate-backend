@@ -32,6 +32,7 @@ const envSchema = z.object({
     .default("https://core.newebpay.com/MPG/mpg_gateway"),
   NEWEBPAY_VERSION: z.string().default("2.2"),
   GOOGLE_CLIENT_ID: optionalSecret,
+  RESEND_API_KEY: optionalSecret,
   EVERY8D_UID: optionalSecret,
   EVERY8D_PWD: optionalSecret
 });

@@ -7,7 +7,7 @@ import { AppError, ok } from "../lib/http.js";
 import { requireAuth } from "../middlewares/auth.js";
 import { attendeeService } from "../services/attendee.service.js";
 import { eventService } from "../services/event.service.js";
-import { smsService } from "../services/sms.service.js";
+import { emailService } from "../services/email.service.js";
 import { prisma } from "../lib/prisma.js";
 import { env } from "../config/env.js";
 
@@ -118,27 +118,26 @@ attendeeRouter.patch(
 attendeeRouter.post(
   "/:attendeeId/invite",
   asyncHandler(async (req, res) => {
-    const { template, senderName } = z.object({
-      template: z.enum(["with-registration", "without-registration"]),
-      senderName: z.string().max(20).optional()
+    const { template } = z.object({
+      template: z.enum(["with-registration", "without-registration"]).default("without-registration")
     }).parse(req.body);
 
     const event = await eventService.get(req.params.eventId);
     const attendee = await prisma.attendee.findUnique({
       where: { id: req.params.attendeeId },
-      select: { name: true, phone: true, qrToken: true }
+      select: { name: true, email: true, qrToken: true }
     });
     if (!attendee) throw new AppError(404, "ATTENDEE_NOT_FOUND", "找不到報名資料");
+    if (!attendee.email) return ok(res, { success: false, message: "此學員無 Email，無法寄送" });
 
     const webUrl = env.WEB_APP_URL.replace(/\/$/, "");
-    const result = await smsService.send({
-      phone: attendee.phone,
+    const result = await emailService.send({
+      to: attendee.email,
       attendeeName: attendee.name,
       eventName: event.name,
       eventDate: new Date(event.startAt).toLocaleDateString("zh-TW"),
       ticketUrl: `${webUrl}/event/${event.slug}?token=${attendee.qrToken}`,
-      template,
-      senderName
+      template
     });
 
     return ok(res, result);

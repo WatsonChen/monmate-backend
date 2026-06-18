@@ -5,7 +5,7 @@ import { asyncHandler } from "../lib/async-handler.js";
 import { ok, AppError } from "../lib/http.js";
 import { requireAuth } from "../middlewares/auth.js";
 import { eventService } from "../services/event.service.js";
-import { smsService } from "../services/sms.service.js";
+import { emailService } from "../services/email.service.js";
 import { prisma } from "../lib/prisma.js";
 import { env } from "../config/env.js";
 
@@ -140,21 +140,22 @@ eventRouter.post(
 
     const event = await eventService.get(req.params.eventId);
     const attendees = await prisma.attendee.findMany({
-      where: { eventId: req.params.eventId },
-      select: { name: true, phone: true, qrToken: true }
+      where: { eventId: req.params.eventId, email: { not: null } },
+      select: { name: true, email: true, qrToken: true }
     });
 
     const webUrl = env.WEB_APP_URL.replace(/\/$/, "");
-    const results = await smsService.sendBulk(
-      attendees.map((a) => ({
-        phone: a.phone,
-        attendeeName: a.name,
-        eventName: event.name,
-        eventDate: new Date(event.startAt).toLocaleDateString("zh-TW"),
-        ticketUrl: `${webUrl}/event/${event.slug}?token=${a.qrToken}`,
-        template,
-        senderName
-      }))
+    const results = await emailService.sendBulk(
+      attendees
+        .filter((a): a is typeof a & { email: string } => !!a.email)
+        .map((a) => ({
+          to: a.email,
+          attendeeName: a.name,
+          eventName: event.name,
+          eventDate: new Date(event.startAt).toLocaleDateString("zh-TW"),
+          ticketUrl: `${webUrl}/event/${event.slug}?token=${a.qrToken}`,
+          template
+        }))
     );
 
     return ok(res, results);
