@@ -80,6 +80,7 @@ model Event {
   location             String?
   attendeeLimit        Int?
   registrationRequired Boolean      @default(false)
+  openRegistration     Boolean      @default(false)
   venueCode            String       @default(uuid())
   registrationFields   Json         @default("[]")
   createdById          String

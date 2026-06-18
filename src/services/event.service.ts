@@ -17,6 +17,7 @@ function toEventDTO(event: EventWithCounts) {
     location: event.location,
     attendeeLimit: event.attendeeLimit,
     registrationRequired: event.registrationRequired,
+    openRegistration: event.openRegistration,
     registrationFields: event.registrationFields as RegistrationField[],
     attendeeCount: event._count.attendees,
     checkInLogCount: event._count.checkInLogs,
@@ -58,6 +59,7 @@ export const eventService = {
       endAt: event.endAt?.toISOString() ?? null,
       location: event.location,
       registrationRequired: event.registrationRequired,
+      openRegistration: event.openRegistration,
       registrationFields: event.registrationFields as RegistrationField[]
     };
   },
@@ -72,6 +74,7 @@ export const eventService = {
     location?: string;
     attendeeLimit?: number;
     registrationRequired?: boolean;
+    openRegistration?: boolean;
     registrationFields?: RegistrationField[];
     createdById: string;
   }) {
@@ -108,6 +111,7 @@ export const eventService = {
           location: input.location,
           attendeeLimit: input.attendeeLimit,
           registrationRequired: input.registrationRequired ?? false,
+          openRegistration: input.openRegistration ?? false,
           registrationFields: input.registrationFields ?? [],
           createdById: input.createdById
         },
@@ -129,6 +133,7 @@ export const eventService = {
       endAt: string | null;
       location: string | null;
       registrationRequired: boolean;
+      openRegistration: boolean;
       registrationFields: RegistrationField[];
     }>
   ) {

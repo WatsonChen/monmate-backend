@@ -225,6 +225,7 @@ export const attendeeService = {
     return attendeeRepository.update(attendeeId, {
       name: input.name,
       phone: input.phone,
+      email: input.email === undefined ? undefined : input.email,
       checkInStatus: input.checkInStatus,
       checkedInAt: input.checkedInAt === null ? null : input.checkedInAt ? new Date(input.checkedInAt) : undefined,
       checkInCapacity: input.checkInCapacity,

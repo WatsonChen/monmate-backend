@@ -104,6 +104,7 @@ attendeeRouter.patch(
     const body = z.object({
       name: z.string().min(1).optional(),
       phone: z.string().min(1).optional(),
+      email: z.string().email().nullable().optional().or(z.literal("").transform(() => null)),
       checkInStatus: z.nativeEnum(CheckInStatus).optional(),
       checkedInAt: z.string().nullable().optional(),
       checkInCapacity: z.coerce.number().int().min(1).max(999).optional(),
