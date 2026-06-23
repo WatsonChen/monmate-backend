@@ -58,6 +58,7 @@ export const eventService = {
       startAt: event.startAt.toISOString(),
       endAt: event.endAt?.toISOString() ?? null,
       location: event.location,
+      attendeeLimit: event.attendeeLimit,
       registrationRequired: event.registrationRequired,
       openRegistration: event.openRegistration,
       registrationFields: event.registrationFields as RegistrationField[]
