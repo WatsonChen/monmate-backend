@@ -12,6 +12,7 @@ export interface SendEmailOptions {
   eventName: string;
   eventDate: string;
   ticketUrl: string;
+  eventPageUrl?: string;
   template: EmailTemplate;
 }
 
@@ -35,7 +36,8 @@ function buildHtml(opts: SendEmailOptions): string {
           ${actionLabel}
         </a>
       </p>
-      <p style="color:#999;font-size:12px">此連結由 MonMate 系統代為寄送，如有疑問請聯繫活動主辦方。</p>
+      ${opts.eventPageUrl ? `<p style="margin-top:8px"><a href="${opts.eventPageUrl}" style="color:#f97316;font-size:13px;text-decoration:none">查看活動頁面 →</a></p>` : ""}
+      <p style="color:#999;font-size:12px">此連結由 <a href="https://monmate.tw" style="color:#999;text-decoration:none">MonMate</a> 系統代為寄送，如有疑問請聯繫活動主辦方。</p>
     </div>
   `;
 }

@@ -132,12 +132,16 @@ attendeeRouter.post(
     if (!attendee.email) return ok(res, { success: false, message: "此學員無 Email，無法寄送" });
 
     const webUrl = env.WEB_APP_URL.replace(/\/$/, "");
+    const ticketUrl = template === "with-registration"
+      ? `${webUrl}/event/${event.slug}/register?token=${attendee.qrToken}`
+      : `${webUrl}/event/${event.slug}/ticket?token=${attendee.qrToken}`;
     const result = await emailService.send({
       to: attendee.email,
       attendeeName: attendee.name,
       eventName: event.name,
       eventDate: new Date(event.startAt).toLocaleDateString("zh-TW"),
-      ticketUrl: `${webUrl}/event/${event.slug}?token=${attendee.qrToken}`,
+      eventPageUrl: `${webUrl}/event/${event.slug}`,
+      ticketUrl,
       template
     });
 
