@@ -187,7 +187,7 @@ export const attendeeService = {
     const latestMethod = new Map(
       successLogs.filter((l) => l.attendeeId).map((l) => [l.attendeeId, l.method])
     );
-    const header = ["姓名", "電話", "Email", "年齡", "性別", "報到碼", "預期人數", "實際報到人數", "報到狀態", "報到時間", "報到方式", "備註"];
+    const header = ["姓名", "電話", "Email", "年齡", "性別", "報到碼", "報名人數", "實際報到人數", "報到狀態", "報到時間", "報到方式", "備註"];
     const rows = attendees.map((a) => [
       a.name, a.phone,
       (a as { email?: string | null }).email ?? "",
@@ -242,6 +242,7 @@ export const attendeeService = {
       email?: string;
       age?: number;
       gender?: "M" | "F" | "OTHER";
+      capacity?: number;
       customFields?: Record<string, string | number>;
     }
   ) {
@@ -254,6 +255,7 @@ export const attendeeService = {
         email: input.email || null,
         age: input.age ?? null,
         gender: input.gender ?? null,
+        checkInCapacity: input.capacity ?? undefined,
         customFields: input.customFields ?? undefined
       },
       select: { id: true, name: true, phone: true, checkInCode: true, qrToken: true, checkInStatus: true }

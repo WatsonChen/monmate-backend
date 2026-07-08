@@ -33,6 +33,7 @@ attendeeRouter.post(
       email: z.string().email().optional().or(z.literal("")),
       age: z.coerce.number().int().min(1).max(120).optional(),
       gender: z.enum(["M", "F", "OTHER"]).optional(),
+      capacity: z.coerce.number().int().min(1).max(999).optional(),
       customFields: z.record(z.string(), z.union([z.string(), z.number()])).optional()
     }).parse(req.body);
     const attendee = await attendeeService.completeRegistration(req.params.eventId, body.token, body);
