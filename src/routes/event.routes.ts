@@ -6,6 +6,7 @@ import { ok, AppError } from "../lib/http.js";
 import { requireAuth } from "../middlewares/auth.js";
 import { eventService } from "../services/event.service.js";
 import { emailService } from "../services/email.service.js";
+import { createAttendeeWithUniqueCode } from "../services/attendee.service.js";
 import { prisma } from "../lib/prisma.js";
 import { env } from "../config/env.js";
 
@@ -93,13 +94,14 @@ eventRouter.post(
     }
 
     const { randomBytes } = await import("node:crypto");
-    const checkInCode = `MM${String(Date.now()).slice(-4)}0001`;
     const qrToken = randomBytes(18).toString("base64url");
 
-    const attendee = await prisma.attendee.create({
-      data: { eventId: event.id, name: name.trim(), phone: phone.trim(), checkInCode, qrToken },
-      select: { qrToken: true }
-    });
+    const attendee = await createAttendeeWithUniqueCode((checkInCode) =>
+      prisma.attendee.create({
+        data: { eventId: event.id, name: name.trim(), phone: phone.trim(), checkInCode, qrToken },
+        select: { qrToken: true }
+      })
+    );
 
     return ok(res, { qrToken: attendee.qrToken }, 201);
   })

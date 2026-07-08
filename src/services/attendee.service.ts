@@ -1,5 +1,5 @@
-import { randomBytes } from "node:crypto";
-import { CheckInLogStatus, CheckInStatus, Gender } from "@prisma/client";
+import { randomBytes, randomInt } from "node:crypto";
+import { CheckInLogStatus, CheckInStatus, Gender, Prisma } from "@prisma/client";
 import * as XLSX from "xlsx";
 import { toCsvCell } from "@monmate/utils";
 import { AppError } from "../lib/http.js";
@@ -7,8 +7,52 @@ import { prisma } from "../lib/prisma.js";
 import { attendeeRepository } from "../repositories/attendee.repository.js";
 import { eventService } from "./event.service.js";
 
-function createCheckInCode(index: number) {
-  return `MM${String(Date.now()).slice(-4)}${String(index + 1).padStart(4, "0")}`;
+// 排除易混淆字元 0/O、1/I/L
+const CHECKIN_CODE_CHARS = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
+const CHECKIN_CODE_LENGTH = 5;
+
+function randomCheckInCode() {
+  let code = "";
+  for (let i = 0; i < CHECKIN_CODE_LENGTH; i++) {
+    code += CHECKIN_CODE_CHARS[randomInt(CHECKIN_CODE_CHARS.length)];
+  }
+  return code;
+}
+
+function isCheckInCodeConflict(err: unknown) {
+  return (
+    err instanceof Prisma.PrismaClientKnownRequestError &&
+    err.code === "P2002" &&
+    (err.meta?.target as string[] | undefined)?.includes("checkInCode")
+  );
+}
+
+// 重試以避開極少數的隨機碼碰撞（DB 有 eventId+checkInCode 唯一限制）
+export async function createAttendeeWithUniqueCode<T>(create: (checkInCode: string) => Promise<T>): Promise<T> {
+  const maxAttempts = 5;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await create(randomCheckInCode());
+    } catch (err) {
+      if (!isCheckInCodeConflict(err) || attempt === maxAttempts - 1) throw err;
+    }
+  }
+  throw new Error("unreachable");
+}
+
+// 匯入時一次生成整批不重複的碼（含比對同活動內既有的碼）
+async function generateUniqueCheckInCodes(eventId: string, count: number): Promise<string[]> {
+  const used = new Set(
+    (await prisma.attendee.findMany({ where: { eventId }, select: { checkInCode: true } })).map((a) => a.checkInCode)
+  );
+  const codes: string[] = [];
+  while (codes.length < count) {
+    const code = randomCheckInCode();
+    if (used.has(code)) continue;
+    used.add(code);
+    codes.push(code);
+  }
+  return codes;
 }
 
 function createQrToken() {
@@ -42,7 +86,6 @@ export const attendeeService = {
 
   async createSingle(eventId: string, userId: string, input: { name: string; phone: string; capacity?: number }) {
     await eventService.get(eventId);
-    const checkInCode = createCheckInCode(0);
     const qrToken = createQrToken();
     const checkInCapacity = Math.max(1, input.capacity ?? 1);
 
@@ -53,10 +96,12 @@ export const attendeeService = {
         throw new AppError(402, "INSUFFICIENT_ATTENDEE_CREDITS", "報到人數額度不足，請購買額度。");
       }
       await tx.user.update({ where: { id: userId }, data: { attendeeCredits: { decrement: 1 } } });
-      return tx.attendee.create({
-        data: { eventId, name: input.name.trim(), phone: input.phone.trim(), checkInCapacity, checkInCode, qrToken },
-        select: { id: true, eventId: true, name: true, phone: true, checkInCode: true, qrToken: true, checkInStatus: true, checkedInAt: true, checkInCapacity: true, checkInCount: true }
-      });
+      return createAttendeeWithUniqueCode((checkInCode) =>
+        tx.attendee.create({
+          data: { eventId, name: input.name.trim(), phone: input.phone.trim(), checkInCapacity, checkInCode, qrToken },
+          select: { id: true, eventId: true, name: true, phone: true, checkInCode: true, qrToken: true, checkInStatus: true, checkedInAt: true, checkInCapacity: true, checkInCount: true }
+        })
+      );
     });
   },
 
@@ -103,8 +148,10 @@ export const attendeeService = {
       .map((label, i) => ({ label, i }))
       .filter(({ i }) => !knownIdx.has(i) && rawHeader[i]);
 
-    const attendees = rows
-      .slice(1)
+    const dataRows = rows.slice(1);
+    const checkInCodes = await generateUniqueCheckInCodes(eventId, dataRows.length);
+
+    const attendees = dataRows
       .map((row, index) => {
         const r = row as unknown[];
         const customFields: Record<string, string> = {};
@@ -124,7 +171,7 @@ export const attendeeService = {
           gender:  genderIdx >= 0 ? parseGender(String(r[genderIdx] ?? "")) : undefined,
           customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
           checkInCapacity,
-          checkInCode: createCheckInCode(index),
+          checkInCode: checkInCodes[index],
           qrToken: createQrToken()
         };
       })
@@ -179,7 +226,10 @@ export const attendeeService = {
   },
 
   async _buildExportData(eventId: string) {
-    const attendees = await attendeeRepository.list(eventId);
+    const [event, attendees] = await Promise.all([
+      eventService.get(eventId),
+      attendeeRepository.list(eventId)
+    ]);
     const successLogs = await prisma.checkInLog.findMany({
       where: { eventId, status: CheckInLogStatus.SUCCESS },
       orderBy: { createdAt: "desc" }
@@ -187,20 +237,35 @@ export const attendeeService = {
     const latestMethod = new Map(
       successLogs.filter((l) => l.attendeeId).map((l) => [l.attendeeId, l.method])
     );
-    const header = ["姓名", "電話", "Email", "年齡", "性別", "報到碼", "報名人數", "實際報到人數", "報到狀態", "報到時間", "報到方式", "備註"];
-    const rows = attendees.map((a) => [
-      a.name, a.phone,
-      (a as { email?: string | null }).email ?? "",
-      (a as { age?: number | null }).age ?? "",
-      (a as { gender?: string | null }).gender ?? "",
-      a.checkInCode,
-      a.checkInCapacity,
-      a.checkInCount,
-      a.checkInStatus,
-      a.checkedInAt?.toISOString() ?? "",
-      latestMethod.get(a.id) ?? "",
-      a.note ?? ""
-    ]);
+
+    const presetKeys = new Set(["email", "age", "gender", "capacity"]);
+    const configCustomFields = (event.registrationFields ?? []).filter((f) => !presetKeys.has(f.key));
+    const customKeys = new Set<string>(configCustomFields.map((f) => f.key));
+    for (const a of attendees) {
+      const cf = (a.customFields ?? {}) as Record<string, unknown>;
+      for (const k of Object.keys(cf)) customKeys.add(k);
+    }
+    const customKeyList = Array.from(customKeys);
+    const customLabel = (key: string) => configCustomFields.find((f) => f.key === key)?.label || key;
+
+    const header = ["姓名", "電話", "Email", "年齡", "性別", "報到碼", "報名人數", "實際報到人數", "報到狀態", "報到時間", "報到方式", "備註", ...customKeyList.map(customLabel)];
+    const rows = attendees.map((a) => {
+      const cf = (a.customFields ?? {}) as Record<string, unknown>;
+      return [
+        a.name, a.phone,
+        (a as { email?: string | null }).email ?? "",
+        (a as { age?: number | null }).age ?? "",
+        (a as { gender?: string | null }).gender ?? "",
+        a.checkInCode,
+        a.checkInCapacity,
+        a.checkInCount,
+        a.checkInStatus,
+        a.checkedInAt?.toISOString() ?? "",
+        latestMethod.get(a.id) ?? "",
+        a.note ?? "",
+        ...customKeyList.map((k) => cf[k] ?? "")
+      ];
+    });
     return { header, rows };
   },
 
@@ -217,6 +282,7 @@ export const attendeeService = {
       checkedInAt: string | null;
       checkInCapacity: number;
       checkInCount: number;
+      customFields: Record<string, string | number> | null;
       note: string | null;
     }>
   ) {
@@ -226,10 +292,13 @@ export const attendeeService = {
       name: input.name,
       phone: input.phone,
       email: input.email === undefined ? undefined : input.email,
+      age: input.age === undefined ? undefined : input.age,
+      gender: input.gender === undefined ? undefined : input.gender,
       checkInStatus: input.checkInStatus,
       checkedInAt: input.checkedInAt === null ? null : input.checkedInAt ? new Date(input.checkedInAt) : undefined,
       checkInCapacity: input.checkInCapacity,
       checkInCount: input.checkInCount,
+      customFields: input.customFields === undefined ? undefined : input.customFields ?? Prisma.JsonNull,
       note: input.note === undefined ? undefined : input.note
     });
   },
