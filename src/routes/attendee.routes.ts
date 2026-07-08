@@ -106,10 +106,13 @@ attendeeRouter.patch(
       name: z.string().min(1).optional(),
       phone: z.string().min(1).optional(),
       email: z.string().email().nullable().optional().or(z.literal("").transform(() => null)),
+      age: z.coerce.number().int().min(1).max(120).nullable().optional(),
+      gender: z.enum(["M", "F", "OTHER"]).nullable().optional(),
       checkInStatus: z.nativeEnum(CheckInStatus).optional(),
       checkedInAt: z.string().nullable().optional(),
       checkInCapacity: z.coerce.number().int().min(1).max(999).optional(),
       checkInCount: z.coerce.number().int().min(0).max(999).optional(),
+      customFields: z.record(z.string(), z.union([z.string(), z.number()])).nullable().optional(),
       note: z.string().nullable().optional()
     }).parse(req.body);
     const attendee = await attendeeService.update(req.params.eventId, req.params.attendeeId, body);
