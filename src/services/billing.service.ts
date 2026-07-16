@@ -198,7 +198,7 @@ export const billingService = {
       })),
       recentTransactions: user.creditTransactions.map((t) => ({
         id: t.id, amount: t.amount, reason: t.reason, balanceAfter: t.balanceAfter,
-        eventId: t.eventId, attendeeId: t.attendeeId, paymentId: t.paymentId,
+        eventId: t.eventId, attendeeId: t.attendeeId, paymentId: t.paymentId, note: t.note,
         createdAt: t.createdAt.toISOString()
       }))
     };
@@ -221,7 +221,7 @@ export const billingService = {
       pageSize,
       transactions: transactions.map((t) => ({
         id: t.id, amount: t.amount, reason: t.reason, balanceAfter: t.balanceAfter,
-        eventId: t.eventId, attendeeId: t.attendeeId, paymentId: t.paymentId,
+        eventId: t.eventId, attendeeId: t.attendeeId, paymentId: t.paymentId, note: t.note,
         createdAt: t.createdAt.toISOString()
       }))
     };

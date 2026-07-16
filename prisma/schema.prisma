@@ -57,6 +57,7 @@ enum CreditTransactionReason {
   PAYMENT_TOPUP
   ATTENDEE_CREATE
   ATTENDEE_IMPORT
+  MANUAL_ADJUSTMENT
 }
 
 model User {
@@ -192,6 +193,7 @@ model CreditTransaction {
   eventId      String?
   attendeeId   String?
   paymentId    String?
+  note         String?
   createdAt    DateTime                @default(now())
 
   @@index([userId, createdAt])
