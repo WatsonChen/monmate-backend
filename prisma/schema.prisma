@@ -53,6 +53,12 @@ enum Gender {
   OTHER
 }
 
+enum CreditTransactionReason {
+  PAYMENT_TOPUP
+  ATTENDEE_CREATE
+  ATTENDEE_IMPORT
+}
+
 model User {
   id              String    @id @default(cuid())
   name            String
@@ -65,6 +71,7 @@ model User {
   staffAssignments EventStaffAssignment[]
   events          Event[]   @relation("EventCreator")
   payments        Payment[]
+  creditTransactions CreditTransaction[]
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 }
@@ -173,6 +180,21 @@ model Payment {
   @@index([userId, createdAt])
   @@index([status])
   @@index([consumedAt])
+}
+
+model CreditTransaction {
+  id           String                  @id @default(cuid())
+  userId       String
+  user         User                    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount       Int
+  reason       CreditTransactionReason
+  balanceAfter Int
+  eventId      String?
+  attendeeId   String?
+  paymentId    String?
+  createdAt    DateTime                @default(now())
+
+  @@index([userId, createdAt])
 }
 
 model Survey {

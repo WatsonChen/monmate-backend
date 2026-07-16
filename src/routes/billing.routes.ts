@@ -46,6 +46,16 @@ billingRouter.get(
   })
 );
 
+billingRouter.get(
+  "/transactions",
+  asyncHandler(async (req, res) => {
+    const page = Math.max(1, Number(req.query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 50));
+    const result = await billingService.listTransactions(req.user!.id, page, pageSize);
+    return ok(res, result);
+  })
+);
+
 billingRouter.post(
   "/checkout-session",
   asyncHandler(async (req, res) => {

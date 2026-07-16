@@ -96,12 +96,23 @@ export const attendeeService = {
         throw new AppError(402, "INSUFFICIENT_ATTENDEE_CREDITS", "報到人數額度不足，請購買額度。");
       }
       await tx.user.update({ where: { id: userId }, data: { attendeeCredits: { decrement: 1 } } });
-      return createAttendeeWithUniqueCode((checkInCode) =>
+      const attendee = await createAttendeeWithUniqueCode((checkInCode) =>
         tx.attendee.create({
           data: { eventId, name: input.name.trim(), phone: input.phone.trim(), checkInCapacity, checkInCode, qrToken },
           select: { id: true, eventId: true, name: true, phone: true, checkInCode: true, qrToken: true, checkInStatus: true, checkedInAt: true, checkInCapacity: true, checkInCount: true }
         })
       );
+      await tx.creditTransaction.create({
+        data: {
+          userId,
+          amount: -1,
+          reason: "ATTENDEE_CREATE",
+          balanceAfter: user.attendeeCredits - 1,
+          eventId,
+          attendeeId: attendee.id
+        }
+      });
+      return attendee;
     });
   },
 
@@ -200,6 +211,15 @@ export const attendeeService = {
       if (toCreate.length > 0) {
         await tx.user.update({ where: { id: userId }, data: { attendeeCredits: { decrement: toCreate.length } } });
         await tx.attendee.createMany({ data: toCreate });
+        await tx.creditTransaction.create({
+          data: {
+            userId,
+            amount: -toCreate.length,
+            reason: "ATTENDEE_IMPORT",
+            balanceAfter: user.attendeeCredits - toCreate.length,
+            eventId
+          }
+        });
       }
       for (const a of toUpdate) {
         await tx.attendee.update({

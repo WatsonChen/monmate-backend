@@ -151,9 +151,19 @@ async function applyPaidPayment(decoded: NewebPayResult) {
       }
     });
     if (toGrant > 0) {
-      await tx.user.update({
+      const updatedUser = await tx.user.update({
         where: { id: payment.userId },
-        data: { attendeeCredits: { increment: toGrant } }
+        data: { attendeeCredits: { increment: toGrant } },
+        select: { attendeeCredits: true }
+      });
+      await tx.creditTransaction.create({
+        data: {
+          userId: payment.userId,
+          amount: toGrant,
+          reason: "PAYMENT_TOPUP",
+          balanceAfter: updatedUser.attendeeCredits,
+          paymentId: payment.id
+        }
       });
     }
     return { credited: toGrant > 0, paymentId: payment.id };
@@ -168,7 +178,11 @@ export const billingService = {
   async getStatus(userId: string) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { attendeeCredits: true, payments: { orderBy: { createdAt: "desc" }, take: 8 } }
+      select: {
+        attendeeCredits: true,
+        payments: { orderBy: { createdAt: "desc" }, take: 8 },
+        creditTransactions: { orderBy: { createdAt: "desc" }, take: 20 }
+      }
     });
     if (!user) throw new AppError(404, "USER_NOT_FOUND", "找不到使用者");
     return {
@@ -181,6 +195,34 @@ export const billingService = {
         consumedAt: p.consumedAt?.toISOString() ?? null,
         paidAt: p.paidAt?.toISOString() ?? null,
         createdAt: p.createdAt.toISOString()
+      })),
+      recentTransactions: user.creditTransactions.map((t) => ({
+        id: t.id, amount: t.amount, reason: t.reason, balanceAfter: t.balanceAfter,
+        eventId: t.eventId, attendeeId: t.attendeeId, paymentId: t.paymentId,
+        createdAt: t.createdAt.toISOString()
+      }))
+    };
+  },
+
+  async listTransactions(userId: string, page: number, pageSize: number) {
+    const skip = (page - 1) * pageSize;
+    const [total, transactions] = await Promise.all([
+      prisma.creditTransaction.count({ where: { userId } }),
+      prisma.creditTransaction.findMany({
+        where: { userId },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: pageSize
+      })
+    ]);
+    return {
+      total,
+      page,
+      pageSize,
+      transactions: transactions.map((t) => ({
+        id: t.id, amount: t.amount, reason: t.reason, balanceAfter: t.balanceAfter,
+        eventId: t.eventId, attendeeId: t.attendeeId, paymentId: t.paymentId,
+        createdAt: t.createdAt.toISOString()
       }))
     };
   },
