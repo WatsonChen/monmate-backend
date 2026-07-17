@@ -31,6 +31,7 @@ enum CheckInLogStatus {
   ALREADY_CHECKED_IN
   NOT_FOUND
   INVALID
+  NOT_STARTED
 }
 
 enum PaymentStatus {
@@ -89,6 +90,7 @@ model Event {
   attendeeLimit        Int?
   registrationRequired Boolean      @default(false)
   openRegistration     Boolean      @default(false)
+  selfCheckInBufferMinutes Int?
   venueCode            String       @default(uuid())
   registrationFields   Json         @default("[]")
   createdById          String

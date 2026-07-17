@@ -31,6 +31,7 @@ const createEventSchema = z.object({
   attendeeLimit: z.number().int().positive().optional(),
   registrationRequired: z.boolean().optional(),
   openRegistration: z.boolean().optional(),
+  selfCheckInBufferMinutes: z.number().int().min(0).nullable().optional(),
   registrationFields: registrationFieldSchema.optional()
 });
 

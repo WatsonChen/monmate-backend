@@ -18,6 +18,7 @@ function toEventDTO(event: EventWithCounts) {
     attendeeLimit: event.attendeeLimit,
     registrationRequired: event.registrationRequired,
     openRegistration: event.openRegistration,
+    selfCheckInBufferMinutes: event.selfCheckInBufferMinutes,
     registrationFields: event.registrationFields as RegistrationField[],
     attendeeCount: event._count.attendees,
     checkInLogCount: event._count.checkInLogs,
@@ -76,6 +77,7 @@ export const eventService = {
     attendeeLimit?: number;
     registrationRequired?: boolean;
     openRegistration?: boolean;
+    selfCheckInBufferMinutes?: number | null;
     registrationFields?: RegistrationField[];
     createdById: string;
   }) {
@@ -96,6 +98,7 @@ export const eventService = {
         attendeeLimit: input.attendeeLimit,
         registrationRequired: input.registrationRequired ?? false,
         openRegistration: input.openRegistration ?? false,
+        selfCheckInBufferMinutes: input.selfCheckInBufferMinutes,
         registrationFields: input.registrationFields ?? [],
         createdById: input.createdById
       },
@@ -117,6 +120,7 @@ export const eventService = {
       location: string | null;
       registrationRequired: boolean;
       openRegistration: boolean;
+      selfCheckInBufferMinutes: number | null;
       registrationFields: RegistrationField[];
     }>
   ) {
