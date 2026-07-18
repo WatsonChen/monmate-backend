@@ -29,6 +29,7 @@ const createEventSchema = z.object({
   endAt: z.string().optional(),
   location: z.string().optional(),
   attendeeLimit: z.number().int().positive().optional(),
+  allowOverCapacity: z.boolean().optional(),
   registrationRequired: z.boolean().optional(),
   openRegistration: z.boolean().optional(),
   selfCheckInBufferMinutes: z.number().int().min(0).nullable().optional(),
@@ -78,9 +79,14 @@ eventRouter.post(
       throw new AppError(403, "REGISTRATION_CLOSED", "此活動未開放公開報名");
     }
 
-    if (event.attendeeLimit) {
-      const count = await prisma.attendee.count({ where: { eventId: event.id } });
-      if (count >= event.attendeeLimit) {
+    // 未開放超額時，用人頭（checkInCapacity 加總）判斷是否已滿；公開報名每筆固定 1 人
+    if (!event.allowOverCapacity && event.attendeeLimit) {
+      const agg = await prisma.attendee.aggregate({
+        where: { eventId: event.id },
+        _sum: { checkInCapacity: true }
+      });
+      const headcount = agg._sum.checkInCapacity ?? 0;
+      if (headcount + 1 > event.attendeeLimit) {
         throw new AppError(409, "CAPACITY_FULL", "此活動報名名額已滿");
       }
     }
@@ -97,10 +103,37 @@ eventRouter.post(
     const { randomBytes } = await import("node:crypto");
     const qrToken = randomBytes(18).toString("base64url");
 
+    const owner = await prisma.event.findUnique({
+      where: { id: event.id },
+      select: { createdById: true }
+    });
+    if (!owner) throw new AppError(404, "EVENT_NOT_FOUND", "找不到活動");
+
+    // 公開報名依人頭扣 1 點（公開報名無攜伴，capacity 固定 1）。
+    // 允許超發：主辦額度可扣為負、永不擋來賓報名（見產品決策）。
     const attendee = await createAttendeeWithUniqueCode((checkInCode) =>
-      prisma.attendee.create({
-        data: { eventId: event.id, name: name.trim(), phone: phone.trim(), checkInCode, qrToken },
-        select: { qrToken: true }
+      prisma.$transaction(async (tx) => {
+        const created = await tx.attendee.create({
+          data: { eventId: event.id, name: name.trim(), phone: phone.trim(), checkInCode, qrToken },
+          select: { id: true, qrToken: true }
+        });
+        const updatedOwner = await tx.user.update({
+          where: { id: owner.createdById },
+          data: { attendeeCredits: { decrement: 1 } },
+          select: { attendeeCredits: true }
+        });
+        await tx.creditTransaction.create({
+          data: {
+            userId: owner.createdById,
+            amount: -1,
+            reason: "ATTENDEE_CREATE",
+            balanceAfter: updatedOwner.attendeeCredits,
+            eventId: event.id,
+            attendeeId: created.id,
+            note: "公開報名"
+          }
+        });
+        return created;
       })
     );
 

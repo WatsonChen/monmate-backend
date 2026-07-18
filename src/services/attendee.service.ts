@@ -85,17 +85,35 @@ export const attendeeService = {
   },
 
   async createSingle(eventId: string, userId: string, input: { name: string; phone: string; capacity?: number }) {
-    await eventService.get(eventId);
+    const event = await eventService.get(eventId);
     const qrToken = createQrToken();
     const checkInCapacity = Math.max(1, input.capacity ?? 1);
 
     return prisma.$transaction(async (tx) => {
+      // 未開放超額時，用人頭（checkInCapacity 加總）判斷是否超過人數上限
+      if (!event.allowOverCapacity && event.attendeeLimit) {
+        const agg = await tx.attendee.aggregate({ where: { eventId }, _sum: { checkInCapacity: true } });
+        const headcount = agg._sum.checkInCapacity ?? 0;
+        if (headcount + checkInCapacity > event.attendeeLimit) {
+          throw new AppError(
+            409,
+            "CAPACITY_FULL",
+            `已達人數上限（上限 ${event.attendeeLimit} 人、現有 ${headcount} 人）。如需超額，請於活動設定開啟「允許超額報名」。`
+          );
+        }
+      }
+
       const user = await tx.user.findUnique({ where: { id: userId }, select: { attendeeCredits: true } });
       if (!user) throw new AppError(404, "USER_NOT_FOUND", "找不到使用者");
-      if (user.attendeeCredits < 1) {
-        throw new AppError(402, "INSUFFICIENT_ATTENDEE_CREDITS", "報到人數額度不足，請購買額度。");
+      // 按人頭扣點：一筆報名者含攜伴需扣 checkInCapacity 個額度
+      if (user.attendeeCredits < checkInCapacity) {
+        throw new AppError(
+          402,
+          "INSUFFICIENT_ATTENDEE_CREDITS",
+          `報到人數額度不足，此筆需 ${checkInCapacity} 個額度，目前剩餘 ${user.attendeeCredits} 個，請購買額度。`
+        );
       }
-      await tx.user.update({ where: { id: userId }, data: { attendeeCredits: { decrement: 1 } } });
+      await tx.user.update({ where: { id: userId }, data: { attendeeCredits: { decrement: checkInCapacity } } });
       const attendee = await createAttendeeWithUniqueCode((checkInCode) =>
         tx.attendee.create({
           data: { eventId, name: input.name.trim(), phone: input.phone.trim(), checkInCapacity, checkInCode, qrToken },
@@ -105,9 +123,9 @@ export const attendeeService = {
       await tx.creditTransaction.create({
         data: {
           userId,
-          amount: -1,
+          amount: -checkInCapacity,
           reason: "ATTENDEE_CREATE",
-          balanceAfter: user.attendeeCredits - 1,
+          balanceAfter: user.attendeeCredits - checkInCapacity,
           eventId,
           attendeeId: attendee.id
         }
@@ -117,7 +135,7 @@ export const attendeeService = {
   },
 
   async importFromFile(eventId: string, fileBuffer: Buffer, userId: string) {
-    await eventService.get(eventId);
+    const event = await eventService.get(eventId);
 
     const workbook = XLSX.read(fileBuffer, { type: "buffer", cellText: false, cellDates: true });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -192,39 +210,67 @@ export const attendeeService = {
 
     await prisma.$transaction(async (tx) => {
       const existingPhoneMap = new Map(
-        (await tx.attendee.findMany({ where: { eventId, phone: { in: attendees.map((a) => a.phone) } }, select: { id: true, phone: true } }))
-          .map((a) => [a.phone, a.id])
+        (await tx.attendee.findMany({
+          where: { eventId, phone: { in: attendees.map((a) => a.phone) } },
+          select: { id: true, phone: true, checkInCapacity: true }
+        })).map((a) => [a.phone, { id: a.id, checkInCapacity: a.checkInCapacity }])
       );
 
       const toCreate = attendees.filter((a) => !existingPhoneMap.has(a.phone));
       const toUpdate = attendees.filter((a) => existingPhoneMap.has(a.phone));
 
+      // 按人頭扣點：
+      // - 新報名者：扣各筆 checkInCapacity（含攜伴）的加總
+      // - 既有報名者重新匯入：人數調高時補扣差額（只補正差，調低不退款以免反覆匯入套現）
+      const createCost = toCreate.reduce((sum, a) => sum + a.checkInCapacity, 0);
+      const updateCost = toUpdate.reduce((sum, a) => {
+        const prev = existingPhoneMap.get(a.phone)!.checkInCapacity;
+        return sum + Math.max(0, a.checkInCapacity - prev);
+      }, 0);
+      const totalCost = createCost + updateCost;
+
+      // 未開放超額時，用人頭判斷整批匯入是否會超過人數上限（超過則整批拒絕）
+      if (!event.allowOverCapacity && event.attendeeLimit) {
+        const agg = await tx.attendee.aggregate({ where: { eventId }, _sum: { checkInCapacity: true } });
+        const currentHeadcount = agg._sum.checkInCapacity ?? 0;
+        const added = createCost + updateCost;
+        if (currentHeadcount + added > event.attendeeLimit) {
+          throw new AppError(
+            409,
+            "CAPACITY_FULL",
+            `此批匯入將超過人數上限（上限 ${event.attendeeLimit} 人、現有 ${currentHeadcount} 人、本批新增 ${added} 人）。如需超額，請於活動設定開啟「允許超額報名」。`
+          );
+        }
+      }
+
       const user = await tx.user.findUnique({ where: { id: userId }, select: { attendeeCredits: true } });
       if (!user) throw new AppError(404, "USER_NOT_FOUND", "找不到使用者");
-      if (user.attendeeCredits < toCreate.length) {
+      if (user.attendeeCredits < totalCost) {
         throw new AppError(
           402,
           "INSUFFICIENT_ATTENDEE_CREDITS",
-          `報到人數額度不足。需要 ${toCreate.length} 個額度，目前剩餘 ${user.attendeeCredits} 個。`
+          `報到人數額度不足。需要 ${totalCost} 個額度，目前剩餘 ${user.attendeeCredits} 個。`
         );
       }
       if (toCreate.length > 0) {
-        await tx.user.update({ where: { id: userId }, data: { attendeeCredits: { decrement: toCreate.length } } });
         await tx.attendee.createMany({ data: toCreate });
-        await tx.creditTransaction.create({
-          data: {
-            userId,
-            amount: -toCreate.length,
-            reason: "ATTENDEE_IMPORT",
-            balanceAfter: user.attendeeCredits - toCreate.length,
-            eventId
-          }
-        });
       }
       for (const a of toUpdate) {
         await tx.attendee.update({
-          where: { id: existingPhoneMap.get(a.phone)! },
+          where: { id: existingPhoneMap.get(a.phone)!.id },
           data: { checkInCapacity: a.checkInCapacity, customFields: a.customFields ?? undefined }
+        });
+      }
+      if (totalCost > 0) {
+        await tx.user.update({ where: { id: userId }, data: { attendeeCredits: { decrement: totalCost } } });
+        await tx.creditTransaction.create({
+          data: {
+            userId,
+            amount: -totalCost,
+            reason: "ATTENDEE_IMPORT",
+            balanceAfter: user.attendeeCredits - totalCost,
+            eventId
+          }
         });
       }
     });

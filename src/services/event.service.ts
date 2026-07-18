@@ -16,6 +16,7 @@ function toEventDTO(event: EventWithCounts) {
     endAt: event.endAt?.toISOString() ?? null,
     location: event.location,
     attendeeLimit: event.attendeeLimit,
+    allowOverCapacity: event.allowOverCapacity,
     registrationRequired: event.registrationRequired,
     openRegistration: event.openRegistration,
     selfCheckInBufferMinutes: event.selfCheckInBufferMinutes,
@@ -60,6 +61,7 @@ export const eventService = {
       endAt: event.endAt?.toISOString() ?? null,
       location: event.location,
       attendeeLimit: event.attendeeLimit,
+      allowOverCapacity: event.allowOverCapacity,
       registrationRequired: event.registrationRequired,
       openRegistration: event.openRegistration,
       registrationFields: event.registrationFields as RegistrationField[]
@@ -75,6 +77,7 @@ export const eventService = {
     endAt?: string;
     location?: string;
     attendeeLimit?: number;
+    allowOverCapacity?: boolean;
     registrationRequired?: boolean;
     openRegistration?: boolean;
     selfCheckInBufferMinutes?: number | null;
@@ -96,6 +99,7 @@ export const eventService = {
         endAt: input.endAt ? new Date(input.endAt) : undefined,
         location: input.location,
         attendeeLimit: input.attendeeLimit,
+        allowOverCapacity: input.allowOverCapacity ?? false,
         registrationRequired: input.registrationRequired ?? false,
         openRegistration: input.openRegistration ?? false,
         selfCheckInBufferMinutes: input.selfCheckInBufferMinutes,
@@ -118,6 +122,8 @@ export const eventService = {
       startAt: string;
       endAt: string | null;
       location: string | null;
+      attendeeLimit: number | null;
+      allowOverCapacity: boolean;
       registrationRequired: boolean;
       openRegistration: boolean;
       selfCheckInBufferMinutes: number | null;
@@ -143,11 +149,20 @@ export const eventService = {
     const event = await this.get(eventId);
     const attendees = await prisma.attendee.findMany({
       where: { eventId },
-      select: { checkInStatus: true, checkedInAt: true, age: true, gender: true }
+      select: {
+        checkInStatus: true, checkedInAt: true, age: true, gender: true,
+        checkInCapacity: true, checkInCount: true
+      }
     });
 
     const total = attendees.length;
     const checkedIn = attendees.filter((a) => a.checkInStatus === "CHECKED_IN").length;
+
+    // total（含 checkedIn）計算的是「報名代表筆數」；一筆報名可攜伴，故另計人頭：
+    // totalRegistered = 報名總人數（各筆 checkInCapacity 加總）
+    // totalCheckedInCount = 實際報到總人數（各筆 checkInCount 加總）
+    const totalRegistered = attendees.reduce((sum, a) => sum + a.checkInCapacity, 0);
+    const totalCheckedInCount = attendees.reduce((sum, a) => sum + a.checkInCount, 0);
 
     const ageGroups: Record<string, number> = {};
     const genderCounts: Record<string, number> = {};
@@ -180,6 +195,8 @@ export const eventService = {
       total,
       checkedIn,
       notCheckedIn: total - checkedIn,
+      totalRegistered,
+      totalCheckedInCount,
       checkInRate: total > 0 ? Math.round((checkedIn / total) * 100) : 0,
       ageGroups,
       genderCounts,

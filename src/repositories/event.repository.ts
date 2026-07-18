@@ -22,6 +22,7 @@ export const eventRepository = {
       select: {
         id: true, name: true, slug: true, description: true, content: true,
         startAt: true, endAt: true, location: true, attendeeLimit: true,
+        allowOverCapacity: true,
         registrationRequired: true, openRegistration: true, registrationFields: true
       }
     });

@@ -88,6 +88,7 @@ model Event {
   endAt                DateTime?
   location             String?
   attendeeLimit        Int?
+  allowOverCapacity    Boolean      @default(false)
   registrationRequired Boolean      @default(false)
   openRegistration     Boolean      @default(false)
   selfCheckInBufferMinutes Int?
