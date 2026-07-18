@@ -84,7 +84,7 @@ export const attendeeService = {
     return attendee;
   },
 
-  async createSingle(eventId: string, userId: string, input: { name: string; phone: string; capacity?: number }) {
+  async createSingle(eventId: string, userId: string, input: { name: string; phone: string; email?: string; capacity?: number }) {
     const event = await eventService.get(eventId);
     const qrToken = createQrToken();
     const checkInCapacity = Math.max(1, input.capacity ?? 1);
@@ -116,8 +116,8 @@ export const attendeeService = {
       await tx.user.update({ where: { id: userId }, data: { attendeeCredits: { decrement: checkInCapacity } } });
       const attendee = await createAttendeeWithUniqueCode((checkInCode) =>
         tx.attendee.create({
-          data: { eventId, name: input.name.trim(), phone: input.phone.trim(), checkInCapacity, checkInCode, qrToken },
-          select: { id: true, eventId: true, name: true, phone: true, checkInCode: true, qrToken: true, checkInStatus: true, checkedInAt: true, checkInCapacity: true, checkInCount: true }
+          data: { eventId, name: input.name.trim(), phone: input.phone.trim(), email: input.email?.trim() || null, checkInCapacity, checkInCode, qrToken },
+          select: { id: true, eventId: true, name: true, phone: true, email: true, checkInCode: true, qrToken: true, checkInStatus: true, checkedInAt: true, checkInCapacity: true, checkInCount: true }
         })
       );
       await tx.creditTransaction.create({

@@ -61,6 +61,7 @@ attendeeRouter.post(
     const body = z.object({
       name: z.string().min(1, "姓名不能為空"),
       phone: z.string().min(1, "電話不能為空"),
+      email: z.string().email("Email 格式不正確").optional().or(z.literal("")),
       capacity: z.coerce.number().int().min(1).max(20).optional()
     }).parse(req.body);
     const attendee = await attendeeService.createSingle(req.params.eventId, req.user!.id, body);
