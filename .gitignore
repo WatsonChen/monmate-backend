@@ -3,5 +3,6 @@ node_modules
 dist
 *.js.map
 api/index.js
+api/index.cjs
 .vercel
 .env*
