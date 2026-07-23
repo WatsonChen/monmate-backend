@@ -151,7 +151,7 @@ export const eventService = {
       where: { eventId },
       select: {
         checkInStatus: true, checkedInAt: true, age: true, gender: true,
-        checkInCapacity: true, checkInCount: true
+        checkInCapacity: true, checkInCount: true, customFields: true
       }
     });
 
@@ -189,6 +189,37 @@ export const eventService = {
       }
     }
 
+    const successfulCheckIns = await prisma.checkInLog.findMany({
+      where: { eventId, status: "SUCCESS" },
+      select: { method: true }
+    });
+    const checkInMethods: Record<string, number> = {};
+    for (const log of successfulCheckIns) {
+      checkInMethods[log.method] = (checkInMethods[log.method] ?? 0) + 1;
+    }
+
+    // Only "select" custom fields have a controlled set of options, so only
+    // those are worth breaking down into a chart — free text/number answers
+    // are too scattered to summarize this way.
+    const presetKeys = new Set(["email", "age", "gender", "capacity"]);
+    const selectFields = (event.registrationFields as RegistrationField[]).filter(
+      (f) => f.type === "select" && !presetKeys.has(f.key)
+    );
+    const customFieldBreakdown: Record<string, { label: string; counts: Record<string, number> }> = {};
+    for (const field of selectFields) {
+      const counts: Record<string, number> = {};
+      for (const a of attendees) {
+        const cf = (a.customFields ?? {}) as Record<string, unknown>;
+        const value = cf[field.key];
+        if (typeof value === "string" && value) {
+          counts[value] = (counts[value] ?? 0) + 1;
+        }
+      }
+      if (Object.keys(counts).length > 0) {
+        customFieldBreakdown[field.key] = { label: field.label ?? field.key, counts };
+      }
+    }
+
     return {
       eventId,
       eventName: event.name,
@@ -200,7 +231,9 @@ export const eventService = {
       checkInRate: total > 0 ? Math.round((checkedIn / total) * 100) : 0,
       ageGroups,
       genderCounts,
-      checkInByHour
+      checkInByHour,
+      checkInMethods,
+      customFieldBreakdown
     };
   }
 };
