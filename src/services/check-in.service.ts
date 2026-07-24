@@ -9,6 +9,10 @@ import { attendeeRepository } from "../repositories/attendee.repository.js";
 import { checkInRepository } from "../repositories/check-in.repository.js";
 import { AppError } from "../lib/http.js";
 
+// Demo-only reset: see the checkIn() usage below for why this exists.
+const DEMO_EVENT_SLUG = "monmate-demo";
+const DEMO_RESET_CREDENTIAL = "0912345678";
+
 function buildAttendeePayload(attendee?: Awaited<ReturnType<typeof attendeeRepository.findById>>) {
   if (!attendee) return undefined;
   return {
@@ -100,11 +104,25 @@ export const checkInService = {
       return buildResult(CheckInLogStatus.INVALID);
     }
 
-    const attendee = await findAttendee(eventId, method, normalizedCredential);
+    let attendee = await findAttendee(eventId, method, normalizedCredential);
 
     if (!attendee) {
       await checkInRepository.createLog({ eventId, method, status: CheckInLogStatus.NOT_FOUND });
       return buildResult(CheckInLogStatus.NOT_FOUND);
+    }
+
+    // The public "monmate-demo" event's designated success attendee resets
+    // to fresh right before every check-in attempt, so anyone trying the
+    // demo always sees the success celebration — instead of the demo
+    // permanently switching to "already checked in" after the first visitor.
+    if (normalizedCredential === DEMO_RESET_CREDENTIAL) {
+      const event = await prisma.event.findUnique({ where: { id: eventId }, select: { slug: true } });
+      if (event?.slug === DEMO_EVENT_SLUG) {
+        attendee = await prisma.attendee.update({
+          where: { id: attendee.id },
+          data: { checkInCount: 0, checkInStatus: CheckInStatus.NOT_CHECKED_IN, checkedInAt: null }
+        });
+      }
     }
 
     // 全員已到

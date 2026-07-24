@@ -102,36 +102,65 @@ async function main() {
     }
   });
 
+  const now = new Date();
+
+  // Each attendee is pinned to a fixed demo state on every seed run —
+  // not just created once — so the public checkin demo reliably shows a
+  // specific outcome per phone number:
+  //   0912345678 王小明：報到成功（同時被 check-in.service 特例重置，可無限重播）
+  //   0987654321 陳美玲：已完成報到
+  //   0933222111 林志強：超過報到人數（攜伴 2 人，已全數報到）
+  //   0966888999 / 0900000000：備用，維持未報到
   const testAttendees = [
     {
       name: "王小明",
       phone: "0912345678",
       checkInCode: "MM0001",
-      qrToken: "demo-qr-token-1"
+      qrToken: "demo-qr-token-1",
+      checkInCapacity: 1,
+      checkInCount: 0,
+      checkInStatus: CheckInStatus.NOT_CHECKED_IN,
+      checkedInAt: null as Date | null
     },
     {
       name: "陳美玲",
       phone: "0987654321",
       checkInCode: "MM0002",
-      qrToken: "demo-qr-token-2"
+      qrToken: "demo-qr-token-2",
+      checkInCapacity: 1,
+      checkInCount: 1,
+      checkInStatus: CheckInStatus.CHECKED_IN,
+      checkedInAt: now
     },
     {
       name: "林志強",
       phone: "0933222111",
       checkInCode: "MM0003",
-      qrToken: "demo-qr-token-3"
+      qrToken: "demo-qr-token-3",
+      checkInCapacity: 2,
+      checkInCount: 2,
+      checkInStatus: CheckInStatus.CHECKED_IN,
+      checkedInAt: now
     },
     {
       name: "張雅婷",
       phone: "0966888999",
       checkInCode: "MM0004",
-      qrToken: "demo-qr-token-4"
+      qrToken: "demo-qr-token-4",
+      checkInCapacity: 1,
+      checkInCount: 0,
+      checkInStatus: CheckInStatus.NOT_CHECKED_IN,
+      checkedInAt: null as Date | null
     },
     {
       name: "測試來賓",
       phone: "0900000000",
       checkInCode: "MM0005",
-      qrToken: "demo-qr-token-5"
+      qrToken: "demo-qr-token-5",
+      checkInCapacity: 1,
+      checkInCount: 0,
+      checkInStatus: CheckInStatus.NOT_CHECKED_IN,
+      checkedInAt: null as Date | null
     }
   ];
 
@@ -144,11 +173,7 @@ async function main() {
             checkInCode: attendee.checkInCode
           }
         },
-        update: {
-          ...attendee,
-          checkInStatus: CheckInStatus.NOT_CHECKED_IN,
-          checkedInAt: null
-        },
+        update: attendee,
         create: {
           ...attendee,
           eventId: event.id
