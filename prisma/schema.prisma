@@ -87,6 +87,7 @@ model Event {
   startAt              DateTime
   endAt                DateTime?
   location             String?
+  logoUrl              String?
   attendeeLimit        Int?
   allowOverCapacity    Boolean      @default(false)
   registrationRequired Boolean      @default(false)

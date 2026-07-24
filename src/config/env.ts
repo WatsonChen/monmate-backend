@@ -34,7 +34,8 @@ const envSchema = z.object({
   GOOGLE_CLIENT_ID: optionalSecret,
   RESEND_API_KEY: optionalSecret,
   EVERY8D_UID: optionalSecret,
-  EVERY8D_PWD: optionalSecret
+  EVERY8D_PWD: optionalSecret,
+  BLOB_READ_WRITE_TOKEN: optionalSecret
 });
 
 export const env = envSchema.parse(process.env);

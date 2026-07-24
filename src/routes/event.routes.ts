@@ -28,6 +28,7 @@ const createEventSchema = z.object({
   startAt: z.string().min(1),
   endAt: z.string().optional(),
   location: z.string().optional(),
+  logoUrl: z.string().url().optional(),
   attendeeLimit: z.number().int().positive().optional(),
   allowOverCapacity: z.boolean().optional(),
   registrationRequired: z.boolean().optional(),
@@ -40,7 +41,8 @@ const updateEventSchema = createEventSchema.partial().extend({
   description: z.string().nullable().optional(),
   content: z.string().nullable().optional(),
   endAt: z.string().nullable().optional(),
-  location: z.string().nullable().optional()
+  location: z.string().nullable().optional(),
+  logoUrl: z.string().url().nullable().optional()
 });
 
 eventRouter.get(

@@ -6,6 +6,7 @@ import { checkInRouter } from "./check-in.routes.js";
 import { eventRouter } from "./event.routes.js";
 import { notificationRouter } from "./notification.routes.js";
 import { surveyRouter } from "./survey.routes.js";
+import { uploadRouter } from "./upload.routes.js";
 
 export const routes = Router();
 
@@ -16,3 +17,4 @@ routes.use("/events/:eventId/check-in", checkInRouter);
 routes.use("/events/:eventId/notifications", notificationRouter);
 routes.use("/events/:eventId/survey", surveyRouter);
 routes.use("/events", eventRouter);
+routes.use("/uploads", uploadRouter);

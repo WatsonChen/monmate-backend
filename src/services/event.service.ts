@@ -15,6 +15,7 @@ function toEventDTO(event: EventWithCounts) {
     startAt: event.startAt.toISOString(),
     endAt: event.endAt?.toISOString() ?? null,
     location: event.location,
+    logoUrl: event.logoUrl,
     attendeeLimit: event.attendeeLimit,
     allowOverCapacity: event.allowOverCapacity,
     registrationRequired: event.registrationRequired,
@@ -60,6 +61,7 @@ export const eventService = {
       startAt: event.startAt.toISOString(),
       endAt: event.endAt?.toISOString() ?? null,
       location: event.location,
+      logoUrl: event.logoUrl,
       attendeeLimit: event.attendeeLimit,
       allowOverCapacity: event.allowOverCapacity,
       registrationRequired: event.registrationRequired,
@@ -76,6 +78,7 @@ export const eventService = {
     startAt: string;
     endAt?: string;
     location?: string;
+    logoUrl?: string | null;
     attendeeLimit?: number;
     allowOverCapacity?: boolean;
     registrationRequired?: boolean;
@@ -98,6 +101,7 @@ export const eventService = {
         startAt: new Date(input.startAt),
         endAt: input.endAt ? new Date(input.endAt) : undefined,
         location: input.location,
+        logoUrl: input.logoUrl,
         attendeeLimit: input.attendeeLimit,
         allowOverCapacity: input.allowOverCapacity ?? false,
         registrationRequired: input.registrationRequired ?? false,
@@ -122,6 +126,7 @@ export const eventService = {
       startAt: string;
       endAt: string | null;
       location: string | null;
+      logoUrl: string | null;
       attendeeLimit: number | null;
       allowOverCapacity: boolean;
       registrationRequired: boolean;
