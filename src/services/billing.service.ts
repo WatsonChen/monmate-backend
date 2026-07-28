@@ -8,6 +8,7 @@ import { PaymentProduct, PaymentStatus } from "@prisma/client";
 import { env } from "../config/env.js";
 import { AppError } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
+import { emailService } from "./email.service.js";
 
 const provider = "newebpay";
 
@@ -125,11 +126,28 @@ function getResult(decoded: NewebPayResult) {
   return decoded.Result ?? decoded;
 }
 
+async function notifyPaymentSuccess(paymentId: string) {
+  const payment = await prisma.payment.findUnique({
+    where: { id: paymentId },
+    include: { user: { select: { name: true, email: true } } }
+  });
+  if (!payment) return;
+  await emailService.sendPaymentNotification({
+    userName: payment.user.name,
+    userEmail: payment.user.email,
+    amount: payment.amountTotal ?? 0,
+    currency: payment.currency ?? "TWD",
+    pricingTier: payment.pricingTier,
+    creditsGranted: payment.creditsGranted,
+    providerOrderNo: payment.providerOrderNo ?? payment.id
+  });
+}
+
 async function applyPaidPayment(decoded: NewebPayResult) {
   const result = getResult(decoded);
   if (!result.MerchantOrderNo) throw new AppError(400, "PAYMENT_ORDER_MISSING", "缺少商店訂單編號");
 
-  return prisma.$transaction(async (tx) => {
+  const outcome = await prisma.$transaction(async (tx) => {
     const payment = await tx.payment.findUnique({ where: { providerOrderNo: result.MerchantOrderNo } });
     if (!payment) throw new AppError(404, "PAYMENT_NOT_FOUND", "找不到付款紀錄");
 
@@ -168,6 +186,14 @@ async function applyPaidPayment(decoded: NewebPayResult) {
     }
     return { credited: toGrant > 0, paymentId: payment.id };
   });
+
+  // 只在這次 webhook 真的入帳（不是重複收到同一筆通知）時才寄信，
+  // 避免藍新重送 webhook 造成同一筆付款收到好幾封通知信。
+  if (outcome.credited) {
+    await notifyPaymentSuccess(outcome.paymentId);
+  }
+
+  return outcome;
 }
 
 export const billingService = {

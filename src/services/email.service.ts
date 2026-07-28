@@ -3,6 +3,7 @@ import { env } from "../config/env.js";
 
 const resend = env.RESEND_API_KEY ? new Resend(env.RESEND_API_KEY) : null;
 const FROM = "MonMate <noreply@monmate.tw>";
+const PAYMENT_NOTIFY_TO = "contact@weihui.io";
 
 export type EmailTemplate = "with-registration" | "without-registration";
 
@@ -109,6 +110,49 @@ export const emailService = {
       return { success: true, message: "Email 已發送" };
     } catch (err) {
       console.error("[Email] Pre-event 發送失敗:", err);
+      return { success: false, message: "Email 發送失敗" };
+    }
+  },
+
+  // 內部通知：有人實際付款（藍新金流 webhook 確認成功）時寄一封摘要信到
+  // 公司信箱，跟寄給使用者的收據信是分開的兩件事。
+  async sendPaymentNotification(opts: {
+    userName: string;
+    userEmail: string;
+    amount: number;
+    currency: string;
+    pricingTier: string | null;
+    creditsGranted: number;
+    providerOrderNo: string;
+  }): Promise<{ success: boolean; message: string }> {
+    if (!resend) {
+      if (env.NODE_ENV !== "production") {
+        console.log(`[Email Mock] Payment notify: ${opts.userEmail} paid ${opts.currency} ${opts.amount}`);
+        return { success: true, message: "已模擬發送（開發模式）" };
+      }
+      return { success: false, message: "Email 服務未設定 (RESEND_API_KEY)" };
+    }
+    try {
+      await resend.emails.send({
+        from: FROM,
+        to: PAYMENT_NOTIFY_TO,
+        subject: `【MonMate】新付款通知 - ${opts.currency} ${opts.amount}`,
+        html: `
+          <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:24px">
+            <h2 style="color:#f97316;margin-top:0">收到一筆新付款</h2>
+            <table style="font-size:14px;line-height:2;color:#1a2421">
+              <tr><td style="color:#666;padding-right:16px">付款人</td><td>${opts.userName}（${opts.userEmail}）</td></tr>
+              <tr><td style="color:#666;padding-right:16px">方案</td><td>${opts.pricingTier ?? "—"}</td></tr>
+              <tr><td style="color:#666;padding-right:16px">金額</td><td>${opts.currency} ${opts.amount}</td></tr>
+              <tr><td style="color:#666;padding-right:16px">入帳點數</td><td>${opts.creditsGranted}</td></tr>
+              <tr><td style="color:#666;padding-right:16px">訂單編號</td><td>${opts.providerOrderNo}</td></tr>
+            </table>
+          </div>
+        `
+      });
+      return { success: true, message: "Email 已發送" };
+    } catch (err) {
+      console.error("[Email] 付款通知發送失敗:", err);
       return { success: false, message: "Email 發送失敗" };
     }
   }
