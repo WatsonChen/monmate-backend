@@ -59,6 +59,7 @@ enum CreditTransactionReason {
   ATTENDEE_CREATE
   ATTENDEE_IMPORT
   MANUAL_ADJUSTMENT
+  FEATURE_UNLOCK
 }
 
 model User {
@@ -95,6 +96,7 @@ model Event {
   selfCheckInBufferMinutes Int?
   venueCode            String       @default(uuid())
   registrationFields   Json         @default("[]")
+  unlockedFeatures     String[]     @default([])
   createdById          String
   createdBy            User         @relation("EventCreator", fields: [createdById], references: [id])
   attendees            Attendee[]

@@ -3,6 +3,16 @@ import { AppError } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
 import { eventRepository } from "../repositories/event.repository.js";
 
+// Premium features an event can unlock once, paid out of the user's
+// existing attendeeCredits pool — a single flat deduction, not a
+// subscription (billing.service.ts only integrates NewebPay's one-time
+// MPG gateway, not their separate recurring-payment product).
+export const FEATURE_UNLOCK_COSTS = {
+  BRANDING: 50
+} as const;
+
+export type FeatureUnlockKey = keyof typeof FEATURE_UNLOCK_COSTS;
+
 type EventWithCounts = NonNullable<Awaited<ReturnType<typeof eventRepository.findById>>>;
 
 function toEventDTO(event: EventWithCounts) {
@@ -22,6 +32,7 @@ function toEventDTO(event: EventWithCounts) {
     openRegistration: event.openRegistration,
     selfCheckInBufferMinutes: event.selfCheckInBufferMinutes,
     registrationFields: event.registrationFields as RegistrationField[],
+    unlockedFeatures: event.unlockedFeatures,
     attendeeCount: event._count.attendees,
     checkInLogCount: event._count.checkInLogs,
     createdAt: event.createdAt.toISOString(),
@@ -66,7 +77,8 @@ export const eventService = {
       allowOverCapacity: event.allowOverCapacity,
       registrationRequired: event.registrationRequired,
       openRegistration: event.openRegistration,
-      registrationFields: event.registrationFields as RegistrationField[]
+      registrationFields: event.registrationFields as RegistrationField[],
+      unlockedFeatures: event.unlockedFeatures
     };
   },
 
@@ -142,6 +154,48 @@ export const eventService = {
       endAt: input.endAt === null ? null : input.endAt ? new Date(input.endAt) : undefined
     });
     return toEventDTO(event);
+  },
+
+  async unlockFeature(eventId: string, userId: string, feature: FeatureUnlockKey) {
+    const cost = FEATURE_UNLOCK_COSTS[feature];
+    if (!cost) throw new AppError(400, "INVALID_FEATURE", "不支援的解鎖項目");
+
+    const event = await this.get(eventId);
+    if (event.unlockedFeatures?.includes(feature)) {
+      throw new AppError(409, "FEATURE_ALREADY_UNLOCKED", "此活動已解鎖此項目");
+    }
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({ where: { id: userId }, select: { attendeeCredits: true } });
+      if (!user) throw new AppError(404, "USER_NOT_FOUND", "找不到使用者");
+      if (user.attendeeCredits < cost) {
+        throw new AppError(
+          402,
+          "INSUFFICIENT_ATTENDEE_CREDITS",
+          `解鎖需要 ${cost} 點，目前剩餘 ${user.attendeeCredits} 點，請購買點數。`
+        );
+      }
+
+      await tx.user.update({ where: { id: userId }, data: { attendeeCredits: { decrement: cost } } });
+      await tx.creditTransaction.create({
+        data: {
+          userId,
+          amount: -cost,
+          reason: "FEATURE_UNLOCK",
+          balanceAfter: user.attendeeCredits - cost,
+          eventId,
+          note: feature
+        }
+      });
+
+      return tx.event.update({
+        where: { id: eventId },
+        data: { unlockedFeatures: { push: feature } },
+        include: { _count: { select: { attendees: true, checkInLogs: true } } }
+      });
+    });
+
+    return toEventDTO(updated);
   },
 
   async delete(eventId: string) {

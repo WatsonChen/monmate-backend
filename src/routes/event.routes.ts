@@ -4,7 +4,7 @@ import bcrypt from "bcryptjs";
 import { asyncHandler } from "../lib/async-handler.js";
 import { ok, AppError } from "../lib/http.js";
 import { requireAuth } from "../middlewares/auth.js";
-import { eventService } from "../services/event.service.js";
+import { eventService, FEATURE_UNLOCK_COSTS, type FeatureUnlockKey } from "../services/event.service.js";
 import { emailService } from "../services/email.service.js";
 import { createAttendeeWithUniqueCode } from "../services/attendee.service.js";
 import { prisma } from "../lib/prisma.js";
@@ -184,6 +184,19 @@ eventRouter.delete(
   asyncHandler(async (req, res) => {
     const result = await eventService.delete(req.params.eventId);
     return ok(res, result);
+  })
+);
+
+const unlockFeatureSchema = z.object({
+  feature: z.enum(Object.keys(FEATURE_UNLOCK_COSTS) as [FeatureUnlockKey, ...FeatureUnlockKey[]])
+});
+
+eventRouter.post(
+  "/:eventId/unlock-feature",
+  asyncHandler(async (req, res) => {
+    const { feature } = unlockFeatureSchema.parse(req.body);
+    const event = await eventService.unlockFeature(req.params.eventId, req.user!.id, feature);
+    return ok(res, event);
   })
 );
 
