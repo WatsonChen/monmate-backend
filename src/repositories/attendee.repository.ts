@@ -43,6 +43,10 @@ export const attendeeRepository = {
     });
   },
 
+  findManyByPhone(eventId: string, phone: string) {
+    return prisma.attendee.findMany({ where: { eventId, phone }, orderBy: { createdAt: "asc" }, take: 6 });
+  },
+
   createMany(data: Prisma.AttendeeCreateManyInput[]) {
     return prisma.attendee.createMany({ data, skipDuplicates: true });
   },

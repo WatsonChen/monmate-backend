@@ -140,6 +140,8 @@ model Attendee {
   note              String?
   checkInCapacity   Int              @default(1)
   checkInCount      Int              @default(0)
+  // 公開報名時由瀏覽器產生的隨機請求識別碼，只用於重試防重，與身份辨識無關
+  registrationKey String?
   checkInLogs     CheckInLog[]
   surveyResponses SurveyResponse[]
   createdAt       DateTime         @default(now())
@@ -147,6 +149,7 @@ model Attendee {
 
   @@unique([eventId, checkInCode])
   @@unique([eventId, qrToken])
+  @@unique([eventId, registrationKey])
   @@index([eventId, name])
   @@index([eventId, phone])
 }

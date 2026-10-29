@@ -34,6 +34,10 @@ export function requireAuth(
 
   try {
     const payload = jwt.verify(token, env.JWT_SECRET) as AuthTokenPayload;
+    // 未知角色一律拒絕，避免被當成非工作人員而走到主辦路徑
+    if (!["OWNER", "ADMIN", "STAFF"].includes(payload.role)) {
+      return next(new AppError(401, "INVALID_TOKEN", "登入狀態已失效"));
+    }
     req.user = {
       id: payload.sub,
       email: payload.email,

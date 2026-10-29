@@ -8,6 +8,7 @@ import { prisma } from "../lib/prisma.js";
 import { attendeeRepository } from "../repositories/attendee.repository.js";
 import { checkInRepository } from "../repositories/check-in.repository.js";
 import { AppError } from "../lib/http.js";
+import { maskName } from "../lib/identity.js";
 
 // Demo-only reset: see the checkIn() usage below for why this exists.
 const DEMO_EVENT_SLUG = "monmate-demo";
@@ -37,12 +38,48 @@ function buildResult(status: CheckInLogStatus, attendee?: Awaited<ReturnType<typ
   };
 }
 
-async function findAttendee(eventId: string, method: CheckInMethod, credential: string) {
+// 同電話可能對應多位報名者（例如家長與孩子共用聯絡電話），不能任意挑一位。
+// 工作人員端會列出候選人與報到碼讓人改用報到碼；公開的自助報到端不揭露他人姓名。
+async function findByPhoneUnique(eventId: string, phone: string, audience: Audience) {
+  const matches = await attendeeRepository.findManyByPhone(eventId, phone);
+  if (matches.length <= 1) return matches[0] ?? null;
+  const hint =
+    audience === "staff"
+      ? `：${matches.map((a) => `${a.name}（${a.checkInCode}）`).join("、")}`
+      : "";
+  throw new AppError(
+    409,
+    "PHONE_NOT_UNIQUE",
+    audience === "staff"
+      ? `此電話對應多位報名者，請改輸入報到碼${hint}`
+      : "此電話對應多位報名者，請改用報到碼，或洽現場工作人員"
+  );
+}
+
+type Audience = "staff" | "self";
+
+async function findAttendee(eventId: string, method: CheckInMethod, credential: string, audience: Audience = "staff") {
   return method === CheckInMethod.QR_CODE
     ? attendeeRepository.findByQrToken(eventId, credential)
     : method === CheckInMethod.PHONE
-    ? attendeeRepository.findByPhone(eventId, credential)
+    ? findByPhoneUnique(eventId, credential, audience)
     : attendeeRepository.findByCheckInCode(eventId, credential);
+}
+
+// 自助報到是公開入口：只回傳完成報到所需的最少資料，不含電話、備註、自訂欄位與內部 ID
+function toSelfResult<T extends { attendee?: ReturnType<typeof buildAttendeePayload> }>(result: T) {
+  if (!result.attendee) return result;
+  const a = result.attendee;
+  return {
+    ...result,
+    attendee: {
+      name: maskName(a.name),
+      checkInStatus: a.checkInStatus,
+      checkedInAt: a.checkedInAt,
+      checkInCapacity: a.checkInCapacity,
+      checkInCount: a.checkInCount
+    }
+  };
 }
 
 export const checkInService = {
@@ -90,13 +127,14 @@ export const checkInService = {
       }
     }
 
-    if ("phone" in credential) {
-      return this.checkIn(eventId, CheckInMethod.PHONE, credential.phone, 1);
-    }
-    return this.checkIn(eventId, CheckInMethod.MANUAL_CODE, credential.checkInCode, 1);
+    const result =
+      "phone" in credential
+        ? await this.checkIn(eventId, CheckInMethod.PHONE, credential.phone, 1, "self")
+        : await this.checkIn(eventId, CheckInMethod.MANUAL_CODE, credential.checkInCode, 1, "self");
+    return toSelfResult(result);
   },
 
-  async checkIn(eventId: string, method: CheckInMethod, credential: string, count = 1) {
+  async checkIn(eventId: string, method: CheckInMethod, credential: string, count = 1, audience: Audience = "staff") {
     const normalizedCredential = credential.trim();
 
     if (!normalizedCredential) {
@@ -104,7 +142,7 @@ export const checkInService = {
       return buildResult(CheckInLogStatus.INVALID);
     }
 
-    let attendee = await findAttendee(eventId, method, normalizedCredential);
+    let attendee = await findAttendee(eventId, method, normalizedCredential, audience);
 
     if (!attendee) {
       await checkInRepository.createLog({ eventId, method, status: CheckInLogStatus.NOT_FOUND });

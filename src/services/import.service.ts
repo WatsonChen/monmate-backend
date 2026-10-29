@@ -41,8 +41,8 @@ export type ExistingAttendee = {
   customFields: Prisma.JsonValue;
 };
 
-export const normalizeName = (v: string) => v.normalize("NFKC").trim().replace(/\s+/g, " ");
-export const normalizePhone = (v: string) => v.normalize("NFKC").replace(/[\s\-()（）]/g, "");
+import { normalizeName, normalizePhone } from "../lib/identity.js";
+export { normalizeName, normalizePhone };
 const nameKey = (name: string, phone: string) => `${normalizeName(name)}|${normalizePhone(phone)}`;
 
 // ---------- 解析 ----------

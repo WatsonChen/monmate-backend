@@ -7,6 +7,7 @@ import { requireAuth } from "../middlewares/auth.js";
 import { requireEventAccess, requireEventOwner } from "../middlewares/event-access.js";
 import { eventService, FEATURE_UNLOCK_COSTS, type FeatureUnlockKey } from "../services/event.service.js";
 import { emailService } from "../services/email.service.js";
+import { normalizeName, normalizePhone } from "../lib/identity.js";
 import { chargeWallet } from "../services/credit-wallet.service.js";
 import { createAttendeeWithUniqueCode } from "../services/attendee.service.js";
 import { prisma } from "../lib/prisma.js";
@@ -71,43 +72,21 @@ eventRouter.get(
 );
 
 const publicRegisterSchema = z.object({
-  name: z.string().min(1, "請填寫姓名"),
-  phone: z.string().min(6, "請填寫電話")
+  name: z.string().min(1, "請填寫姓名").max(100),
+  phone: z.string().min(6, "請填寫電話").max(30),
+  // 瀏覽器產生的隨機請求識別碼，僅用於「同一次送出」的重試防重
+  requestId: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/).optional()
 });
 
 eventRouter.post(
   "/public/:slug/register",
   asyncHandler(async (req, res) => {
-    const { name, phone } = publicRegisterSchema.parse(req.body);
+    const { name, phone, requestId } = publicRegisterSchema.parse(req.body);
     const event = await eventService.getPublicBySlug(req.params.slug);
 
     if (!event.openRegistration) {
       throw new AppError(403, "REGISTRATION_CLOSED", "此活動未開放公開報名");
     }
-
-    // 未開放超額時，用人頭（checkInCapacity 加總）判斷是否已滿；公開報名每筆固定 1 人
-    if (!event.allowOverCapacity && event.attendeeLimit) {
-      const agg = await prisma.attendee.aggregate({
-        where: { eventId: event.id },
-        _sum: { checkInCapacity: true }
-      });
-      const headcount = agg._sum.checkInCapacity ?? 0;
-      if (headcount + 1 > event.attendeeLimit) {
-        throw new AppError(409, "CAPACITY_FULL", "此活動報名名額已滿");
-      }
-    }
-
-    // Idempotent: return existing token if same phone already registered
-    const existing = await prisma.attendee.findFirst({
-      where: { eventId: event.id, phone: phone.trim() },
-      select: { qrToken: true }
-    });
-    if (existing) {
-      return ok(res, { qrToken: existing.qrToken });
-    }
-
-    const { randomBytes } = await import("node:crypto");
-    const qrToken = randomBytes(18).toString("base64url");
 
     const owner = await prisma.event.findUnique({
       where: { id: event.id },
@@ -115,14 +94,63 @@ eventRouter.post(
     });
     if (!owner) throw new AppError(404, "EVENT_NOT_FOUND", "找不到活動");
 
-    // 公開報名依人頭扣 1 點（無攜伴，capacity 固定 1），由主辦錢包支付，受 -3 點下限約束。
-    // 點數不足時只告訴來賓「目前無法報名」，不暴露主辦的餘額或帳務資訊。
-    let attendee;
+    const cleanName = name.trim();
+    const cleanPhone = phone.trim();
+    const sameIdentity = (a: { name: string; phone: string }) =>
+      normalizeName(a.name) === normalizeName(cleanName) && normalizePhone(a.phone) === normalizePhone(cleanPhone);
+
+    const { randomBytes } = await import("node:crypto");
+    const qrToken = randomBytes(18).toString("base64url");
+
+    // 身份辨識與重試防重分開：
+    // - 重試防重：只認「同一個請求識別碼」，且姓名與電話都要一致，才回傳先前的憑證
+    // - 身份：同電話不代表同一人；只有「姓名與電話都相同」才視為已報名，且不回傳任何憑證
+    // 公開報名依人頭扣 1 點（無攜伴），由主辦錢包支付，受 -3 點下限約束。
+    let outcome: { qrToken: string; replay: boolean };
     try {
-      attendee = await createAttendeeWithUniqueCode((checkInCode) =>
+      outcome = await createAttendeeWithUniqueCode((checkInCode) =>
         prisma.$transaction(async (tx) => {
+          // 同活動同電話的請求序列化，避免並行時重複新增
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${event.id + ":" + normalizePhone(cleanPhone)}))`;
+
+          let keyToStore: string | undefined = requestId;
+          if (requestId) {
+            const byKey = await tx.attendee.findUnique({
+              where: { eventId_registrationKey: { eventId: event.id, registrationKey: requestId } },
+              select: { name: true, phone: true, qrToken: true }
+            });
+            if (byKey) {
+              if (sameIdentity(byKey)) return { qrToken: byKey.qrToken, replay: true };
+              keyToStore = undefined; // 識別碼已被別筆使用，這筆不綁定
+            }
+          }
+
+          // 電話以去除空白、連字號、括號後的格式比對（資料庫存的是原始輸入）
+          const samePhone = await tx.$queryRaw<{ name: string; phone: string }[]>`
+            SELECT "name", "phone" FROM "Attendee"
+            WHERE "eventId" = ${event.id}
+              AND regexp_replace("phone", '[[:space:]()（）-]', '', 'g') = ${normalizePhone(cleanPhone)}`;
+          if (samePhone.some(sameIdentity)) {
+            throw new AppError(409, "ALREADY_REGISTERED", "此姓名與電話已報名。請使用先前取得的報到連結，或聯絡主辦單位。");
+          }
+
+          // 未開放超額時，用人頭（checkInCapacity 加總）判斷是否已滿；公開報名每筆固定 1 人
+          if (!event.allowOverCapacity && event.attendeeLimit) {
+            const agg = await tx.attendee.aggregate({ where: { eventId: event.id }, _sum: { checkInCapacity: true } });
+            if ((agg._sum.checkInCapacity ?? 0) + 1 > event.attendeeLimit) {
+              throw new AppError(409, "CAPACITY_FULL", "此活動報名名額已滿");
+            }
+          }
+
           const created = await tx.attendee.create({
-            data: { eventId: event.id, name: name.trim(), phone: phone.trim(), checkInCode, qrToken },
+            data: {
+              eventId: event.id,
+              name: cleanName,
+              phone: cleanPhone,
+              checkInCode,
+              qrToken,
+              registrationKey: keyToStore
+            },
             select: { id: true, qrToken: true }
           });
           await chargeWallet(tx, {
@@ -133,17 +161,18 @@ eventRouter.post(
             attendeeId: created.id,
             note: "公開報名"
           });
-          return created;
+          return { qrToken: created.qrToken, replay: false };
         })
       );
     } catch (err) {
+      // 點數不足時只告訴來賓「目前無法報名」，不暴露主辦的餘額或帳務資訊
       if (err instanceof AppError && err.code === "INSUFFICIENT_ATTENDEE_CREDITS") {
         throw new AppError(409, "REGISTRATION_UNAVAILABLE", "目前無法完成報名，請聯絡主辦單位");
       }
       throw err;
     }
 
-    return ok(res, { qrToken: attendee.qrToken }, 201);
+    return ok(res, { qrToken: outcome.qrToken }, outcome.replay ? 200 : 201);
   })
 );
 
