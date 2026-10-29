@@ -341,3 +341,25 @@ describe("角色", () => {
     expect((await call("DELETE", `/events/${event.id}`, tokenFor(platformOwner))).status).toBe(404);
   });
 });
+
+describe("取消匯入預覽（HTTP）", () => {
+  it("未登入 401；他人 404 且預覽仍在；擁有者 200 並刪除", async () => {
+    const owner = await createOwner(100);
+    const other = await createOwner(100);
+    const event = await createEvent(owner.id);
+    const session = await prisma.importSession.create({
+      data: {
+        eventId: event.id, userId: owner.id, fileName: "x.xlsx", fileHash: "h", rows: [], rowErrors: [],
+        expiresAt: new Date(Date.now() + 3600_000)
+      }
+    });
+    const path = `/events/${event.id}/attendees/import/${session.id}`;
+    expect((await call("DELETE", path)).status).toBe(401);
+    expect((await call("DELETE", path, tokenFor(other))).status).toBe(404);
+    expect(await prisma.importSession.count({ where: { id: session.id } })).toBe(1);
+    const res = await call("DELETE", path, tokenFor(owner));
+    expect(res.status).toBe(200);
+    expect(res.json.data.discarded).toBe(true);
+    expect(await prisma.importSession.count({ where: { id: session.id } })).toBe(0);
+  });
+});

@@ -108,6 +108,14 @@ attendeeRouter.get(
   })
 );
 
+attendeeRouter.delete(
+  "/import/:sessionId",
+  requireEventOwner,
+  asyncHandler(async (req, res) => {
+    return ok(res, await importService.discard(req.params.eventId, req.user!.id, req.params.sessionId));
+  })
+);
+
 attendeeRouter.put(
   "/import/:sessionId/decisions",
   requireEventOwner,

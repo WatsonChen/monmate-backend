@@ -572,6 +572,16 @@ export const importService = {
     });
   },
 
+  // 取消預覽：立刻刪除暫存的名單（含個資）。只刪尚未確認的預覽；已確認的紀錄只剩結果摘要，不受影響。
+  // 可重複呼叫：找不到或已確認時回傳 discarded: false，不視為錯誤。
+  async discard(eventId: string, userId: string, sessionId: string) {
+    await assertEventOwner(prisma, eventId, userId);
+    const { count } = await prisma.importSession.deleteMany({
+      where: { id: sessionId, eventId, userId, status: ImportSessionStatus.PREVIEW }
+    });
+    return { discarded: count === 1 };
+  },
+
   async listHistory(eventId: string, userId: string) {
     await assertEventOwner(prisma, eventId, userId);
     const sessions = await prisma.importSession.findMany({

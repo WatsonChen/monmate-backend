@@ -445,3 +445,62 @@ describe("暫存清理與歷史", () => {
     expect(await prisma.importSession.count({ where: { id: stale.sessionId } })).toBe(0);
   });
 });
+
+describe("取消預覽：立即刪除暫存資料", () => {
+  it("取消後暫存名單整筆刪除，不新增名單、不扣點；再次取消不報錯；之後讀取與確認都找不到", async () => {
+    const owner = await createOwner(100);
+    const event = await createEvent(owner.id);
+    const preview = await previewOf(event.id, owner.id, [HEADER, ...people(3)]);
+
+    expect(await importService.discard(event.id, owner.id, preview.sessionId)).toEqual({ discarded: true });
+    expect(await prisma.importSession.count({ where: { id: preview.sessionId } })).toBe(0);
+    expect(await count(event.id)).toBe(0);
+    expect(await balanceOf(owner.id)).toBe(100);
+    expect(await ledger(owner.id)).toBe(0);
+
+    expect(await importService.discard(event.id, owner.id, preview.sessionId)).toEqual({ discarded: false });
+    await expect(importService.getPreview(event.id, owner.id, preview.sessionId)).rejects.toMatchObject({ statusCode: 404 });
+    await expect(
+      importService.confirm(event.id, owner.id, preview.sessionId, { expectedCost: 3 })
+    ).rejects.toMatchObject({ statusCode: 404 });
+  });
+
+  it("已確認的匯入不會被刪除，歷史摘要保留", async () => {
+    const owner = await createOwner(100);
+    const event = await createEvent(owner.id);
+    const { preview } = await runImport(event.id, owner.id, [HEADER, ...people(2)]);
+    expect(await importService.discard(event.id, owner.id, preview.sessionId)).toEqual({ discarded: false });
+    expect(await importService.listHistory(event.id, owner.id)).toHaveLength(1);
+  });
+
+  it("他人不能取消你的預覽，預覽仍然存在", async () => {
+    const owner = await createOwner(100);
+    const other = await createOwner(100);
+    const event = await createEvent(owner.id);
+    const preview = await previewOf(event.id, owner.id, [HEADER, ...people(2)]);
+    await expect(importService.discard(event.id, other.id, preview.sessionId)).rejects.toBeTruthy();
+    expect(await prisma.importSession.count({ where: { id: preview.sessionId } })).toBe(1);
+  });
+
+  it("取消與確認同時發生：結果一致，不會出現已匯入卻被刪掉紀錄，或兩者都成功", async () => {
+    const owner = await createOwner(100);
+    const event = await createEvent(owner.id);
+    const preview = await previewOf(event.id, owner.id, [HEADER, ...people(3)]);
+    const [d, c] = await Promise.allSettled([
+      importService.discard(event.id, owner.id, preview.sessionId),
+      importService.confirm(event.id, owner.id, preview.sessionId, { expectedCost: 3 })
+    ]);
+    const discarded = d.status === "fulfilled" && d.value.discarded;
+    const confirmed = c.status === "fulfilled";
+    expect(discarded && confirmed).toBe(false);
+    if (confirmed) {
+      expect(await count(event.id)).toBe(3);
+      expect(await balanceOf(owner.id)).toBe(97);
+      expect(await prisma.importSession.count({ where: { id: preview.sessionId, status: "CONFIRMED" } })).toBe(1);
+    } else {
+      expect(await count(event.id)).toBe(0);
+      expect(await balanceOf(owner.id)).toBe(100);
+      expect(await prisma.importSession.count({ where: { id: preview.sessionId } })).toBe(0);
+    }
+  });
+});
