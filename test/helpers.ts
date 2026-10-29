@@ -8,7 +8,7 @@ const rand = () => randomBytes(4).toString("hex");
 export async function resetDb() {
   // 依外鍵順序清空；測試資料庫專用
   await prisma.$executeRawUnsafe(
-    'TRUNCATE TABLE "User" RESTART IDENTITY CASCADE'
+    'TRUNCATE TABLE "User", "RateLimitCounter" RESTART IDENTITY CASCADE'
   );
 }
 

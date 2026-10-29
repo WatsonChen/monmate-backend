@@ -35,6 +35,7 @@ function toEventDTO(event: EventWithCounts) {
     selfCheckInBufferMinutes: event.selfCheckInBufferMinutes,
     registrationFields: event.registrationFields as RegistrationField[],
     unlockedFeatures: event.unlockedFeatures,
+    registrationPausedAt: event.publicRegistrationPausedAt?.toISOString() ?? null,
     attendeeCount: event._count.attendees,
     checkInLogCount: event._count.checkInLogs,
     createdAt: event.createdAt.toISOString(),
@@ -81,7 +82,8 @@ export const eventService = {
       registrationRequired: event.registrationRequired,
       openRegistration: event.openRegistration,
       registrationFields: event.registrationFields as RegistrationField[],
-      unlockedFeatures: event.unlockedFeatures
+      unlockedFeatures: event.unlockedFeatures,
+      registrationPaused: event.publicRegistrationPausedAt !== null
     };
   },
 

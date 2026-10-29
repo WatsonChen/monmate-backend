@@ -116,6 +116,46 @@ export const emailService = {
 
   // 內部通知：有人實際付款（藍新金流 webhook 確認成功）時寄一封摘要信到
   // 公司信箱，跟寄給使用者的收據信是分開的兩件事。
+  // 公開報名異常告警：寄給活動主辦（不是平台信箱）。內容只含活動名稱與次數，不含任何參加者資料。
+  async sendAbuseAlert(opts: {
+    to: string;
+    eventName: string;
+    kind: "EVENT" | "IP";
+    count: number;
+    windowMinutes: number;
+    manageUrl: string;
+  }): Promise<{ success: boolean; message: string }> {
+    const esc = (v: string) => v.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
+    const what = opts.kind === "EVENT" ? "此活動" : "單一來源";
+    const subject = `【MonMate】${opts.eventName} 公開報名短時間內大量新增`;
+    if (!resend) {
+      if (env.NODE_ENV !== "production") {
+        console.log(`[Email Mock] Abuse alert: ${opts.to} | ${subject}`);
+        return { success: true, message: "已模擬發送（開發模式）" };
+      }
+      return { success: false, message: "Email 服務未設定 (RESEND_API_KEY)" };
+    }
+    try {
+      await resend.emails.send({
+        from: FROM,
+        to: opts.to,
+        subject,
+        html: `
+          <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:24px">
+            <h2 style="color:#f97316;margin-top:0">公開報名短時間內大量新增</h2>
+            <p style="font-size:15px;line-height:1.7">「${esc(opts.eventName)}」的公開報名，${what}在 ${opts.windowMinutes} 分鐘內已新增 ${opts.count} 筆。若這是預期中的報名高峰可以忽略；若不是，建議先暫停新增報名，確認後再恢復。</p>
+            <p style="font-size:14px;line-height:1.7;color:#555">暫停只會停止「新增報名」，已報名者的報到與查詢不受影響。同樣的告警在一段時間內只會寄一次。</p>
+            <p style="margin:24px 0"><a href="${opts.manageUrl}" style="background:#f97316;color:white;padding:12px 24px;border-radius:8px;text-decoration:none;font-weight:bold">前往活動管理</a></p>
+          </div>
+        `
+      });
+      return { success: true, message: "Email 已發送" };
+    } catch (err) {
+      console.error("[Email] 異常告警發送失敗:", err);
+      return { success: false, message: "Email 發送失敗" };
+    }
+  },
+
   async sendPaymentNotification(opts: {
     userName: string;
     userEmail: string;

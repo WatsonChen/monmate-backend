@@ -7,7 +7,10 @@ import { requireAuth } from "../middlewares/auth.js";
 import { requireEventAccess, requireEventOwner } from "../middlewares/event-access.js";
 import { eventService, FEATURE_UNLOCK_COSTS, type FeatureUnlockKey } from "../services/event.service.js";
 import { emailService } from "../services/email.service.js";
+import { getClientIp } from "../lib/client-ip.js";
 import { normalizeName, normalizePhone } from "../lib/identity.js";
+import { abuseService } from "../services/abuse.service.js";
+import { turnstileService } from "../services/turnstile.service.js";
 import { chargeWallet } from "../services/credit-wallet.service.js";
 import { createAttendeeWithUniqueCode } from "../services/attendee.service.js";
 import { prisma } from "../lib/prisma.js";
@@ -75,13 +78,15 @@ const publicRegisterSchema = z.object({
   name: z.string().min(1, "請填寫姓名").max(100),
   phone: z.string().min(6, "請填寫電話").max(30),
   // 瀏覽器產生的隨機請求識別碼，僅用於「同一次送出」的重試防重
-  requestId: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/).optional()
+  requestId: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/).optional(),
+  // Cloudflare Turnstile 的一次性 token；僅在後端設定 TURNSTILE_SECRET_KEY 後才會被要求
+  turnstileToken: z.string().max(4096).optional()
 });
 
 eventRouter.post(
   "/public/:slug/register",
   asyncHandler(async (req, res) => {
-    const { name, phone, requestId } = publicRegisterSchema.parse(req.body);
+    const { name, phone, requestId, turnstileToken } = publicRegisterSchema.parse(req.body);
     const event = await eventService.getPublicBySlug(req.params.slug);
 
     if (!event.openRegistration) {
@@ -90,9 +95,30 @@ eventRouter.post(
 
     const owner = await prisma.event.findUnique({
       where: { id: event.id },
-      select: { createdById: true }
+      select: { createdById: true, publicRegistrationPausedAt: true }
     });
     if (!owner) throw new AppError(404, "EVENT_NOT_FOUND", "找不到活動");
+
+    // 主辦手動暫停：只停止「新增報名」，既有參加者的報到與查詢走其他入口，不受影響
+    if (owner.publicRegistrationPausedAt) throw abuseService.pausedError();
+
+    // 防護順序：速率限制（便宜、先擋）→ 人機驗證 → 才會進入新增與扣點
+    const ip = getClientIp(req);
+    await abuseService.enforcePublicRegistrationLimits({ eventId: event.id, phone, ip });
+    if (turnstileService.isEnabled()) {
+      try {
+        await turnstileService.verify({
+          token: turnstileToken,
+          ip,
+          idempotencyKey: requestId && requestId.length <= 50 ? requestId : undefined
+        });
+      } catch (err) {
+        if (err instanceof AppError && ["CAPTCHA_REQUIRED", "CAPTCHA_FAILED", "CAPTCHA_EXPIRED"].includes(err.code)) {
+          await abuseService.recordCaptchaFailure({ eventId: event.id, ip });
+        }
+        throw err;
+      }
+    }
 
     const cleanName = name.trim();
     const cleanPhone = phone.trim();
@@ -172,6 +198,11 @@ eventRouter.post(
       throw err;
     }
 
+    if (!outcome.replay) {
+      // 觀察與告警不能影響報名結果
+      await abuseService.afterSuccessfulRegistration({ eventId: event.id, ip }).catch((e) => console.error("[abuse]", e));
+    }
+
     return ok(res, { qrToken: outcome.qrToken }, outcome.replay ? 200 : 201);
   })
 );
@@ -234,6 +265,33 @@ eventRouter.post(
     const { feature } = unlockFeatureSchema.parse(req.body);
     const event = await eventService.unlockFeature(req.params.eventId, req.user!.id, feature);
     return ok(res, event);
+  })
+);
+
+// 手動暫停／恢復「新增公開報名」，並留下稽核紀錄；只有活動建立者可操作
+eventRouter.post(
+  "/:eventId/public-registration/pause",
+  requireEventOwner,
+  asyncHandler(async (req, res) => {
+    const result = await abuseService.pause(req.params.eventId, req.user!.id);
+    return ok(res, { registrationPausedAt: result.publicRegistrationPausedAt?.toISOString() ?? null });
+  })
+);
+
+eventRouter.post(
+  "/:eventId/public-registration/resume",
+  requireEventOwner,
+  asyncHandler(async (req, res) => {
+    const result = await abuseService.resume(req.params.eventId, req.user!.id);
+    return ok(res, { registrationPausedAt: result.publicRegistrationPausedAt?.toISOString() ?? null });
+  })
+);
+
+eventRouter.get(
+  "/:eventId/abuse-events",
+  requireEventOwner,
+  asyncHandler(async (req, res) => {
+    return ok(res, await abuseService.list(req.params.eventId));
   })
 );
 

@@ -24,7 +24,7 @@ export const eventRepository = {
         startAt: true, endAt: true, location: true, logoUrl: true, coverImageUrl: true, attendeeLimit: true,
         allowOverCapacity: true,
         registrationRequired: true, openRegistration: true, registrationFields: true,
-        unlockedFeatures: true
+        unlockedFeatures: true, publicRegistrationPausedAt: true
       }
     });
   },

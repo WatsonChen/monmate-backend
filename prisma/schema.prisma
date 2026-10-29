@@ -99,6 +99,12 @@ model Event {
   venueCode            String       @default(uuid())
   registrationFields   Json         @default("[]")
   unlockedFeatures     String[]     @default([])
+  // 主辦手動暫停「新增公開報名」；既有參加者的報到、查詢完全不受影響
+  publicRegistrationPausedAt   DateTime?
+  publicRegistrationPausedById String?
+  // 最近一次寄出異常告警的時間，用來做冷卻去重
+  lastAbuseAlertAt             DateTime?
+  abuseEvents          AbuseEvent[]
   createdById          String
   createdBy            User         @relation("EventCreator", fields: [createdById], references: [id])
   attendees            Attendee[]
@@ -275,4 +281,38 @@ model ImportSession {
 
   @@index([eventId, createdAt])
   @@index([status, expiresAt])
+}
+
+// 共享、會過期的固定視窗計數器，用於公開入口的速率限制與告警門檻（Vercel 無共用記憶體，故存資料庫）
+model RateLimitCounter {
+  key         String
+  windowStart DateTime
+  count       Int      @default(0)
+  expiresAt   DateTime
+
+  @@id([key, windowStart])
+  @@index([expiresAt])
+}
+
+enum AbuseEventType {
+  RATE_ALERT_EVENT
+  RATE_ALERT_IP
+  RATE_LIMITED
+  CAPTCHA_FAILED
+  REGISTRATION_PAUSED
+  REGISTRATION_RESUMED
+}
+
+// 公開報名的異常與稽核紀錄；來源 IP 只存雜湊，不存原始 IP
+model AbuseEvent {
+  id          String         @id @default(cuid())
+  eventId     String
+  event       Event          @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  type        AbuseEventType
+  detail      Json?
+  actorUserId String?
+  notified    Boolean        @default(false)
+  createdAt   DateTime       @default(now())
+
+  @@index([eventId, createdAt])
 }
