@@ -9,6 +9,7 @@ import { env } from "../config/env.js";
 import { AppError } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
 import { emailService } from "./email.service.js";
+import { importService } from "./import.service.js";
 
 const provider = "newebpay";
 
@@ -297,6 +298,9 @@ export const billingService = {
         returnTo
       }
     });
+
+    // 付款期間延長對應的匯入預覽（有上限）；失敗不影響付款本身
+    await importService.extendForPayment(userId, returnTo).catch(() => undefined);
 
     const tradeInfo = encryptTradeInfo(
       {

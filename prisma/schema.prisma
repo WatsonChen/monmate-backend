@@ -316,3 +316,15 @@ model AbuseEvent {
 
   @@index([eventId, createdAt])
 }
+
+// 排程維護工作（例如清理過期暫存）的執行紀錄，供查核每次清了多少、是否成功
+model MaintenanceRun {
+  id         String    @id @default(cuid())
+  job        String
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  ok         Boolean   @default(false)
+  result     Json?
+
+  @@index([job, startedAt])
+}

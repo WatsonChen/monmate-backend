@@ -9,6 +9,9 @@ import { chargeWallet } from "./credit-wallet.service.js";
 
 export const MAX_IMPORT_ROWS = 5000;
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+// 付款期間可延長暫存，但從建立起算最長 48 小時，不能無限續期
+const SESSION_MAX_LIFETIME_MS = 48 * 60 * 60 * 1000;
+const PAYMENT_EXTENSION_MS = 2 * 60 * 60 * 1000;
 const MAX_ROW_CAPACITY = 999;
 const EXPORT_ONLY_COLUMNS = new Set(["報到碼", "實際報到人數", "報到狀態", "報到時間", "報到方式"]);
 
@@ -570,6 +573,35 @@ export const importService = {
       });
       return { status: "CONFIRMED" as const, alreadyConfirmed: false, result: summary };
     });
+  },
+
+  // 建立付款時，把對應的預覽延長到「現在起 2 小時」，讓使用者付款後能回到同一份預覽；
+  // 上限為建立後 48 小時。只延長自己的、尚未過期的預覽，已過期的不會復活。
+  async extendForPayment(userId: string, returnTo: string | null | undefined) {
+    if (!returnTo) return null;
+    let sessionId: string | null = null;
+    let eventId: string | null = null;
+    try {
+      const url = new URL(returnTo, "http://local");
+      sessionId = url.searchParams.get("importSession");
+      eventId = url.pathname.match(/^\/admin\/events\/([A-Za-z0-9_-]+)$/)?.[1] ?? null;
+    } catch {
+      return null;
+    }
+    if (!sessionId || !eventId) return null;
+
+    const session = await prisma.importSession.findFirst({
+      where: { id: sessionId, eventId, userId, status: ImportSessionStatus.PREVIEW, expiresAt: { gt: new Date() } }
+    });
+    if (!session) return null;
+    const cap = session.createdAt.getTime() + SESSION_MAX_LIFETIME_MS;
+    const next = Math.min(cap, Math.max(session.expiresAt.getTime(), Date.now() + PAYMENT_EXTENSION_MS));
+    if (next <= session.expiresAt.getTime()) return session.expiresAt;
+    await prisma.importSession.updateMany({
+      where: { id: session.id, status: ImportSessionStatus.PREVIEW },
+      data: { expiresAt: new Date(next) }
+    });
+    return new Date(next);
   },
 
   // 取消預覽：立刻刪除暫存的名單（含個資）。只刪尚未確認的預覽；已確認的紀錄只剩結果摘要，不受影響。
