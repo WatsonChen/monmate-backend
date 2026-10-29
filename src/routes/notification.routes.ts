@@ -3,11 +3,12 @@ import { z } from "zod";
 import { asyncHandler } from "../lib/async-handler.js";
 import { ok } from "../lib/http.js";
 import { requireAuth } from "../middlewares/auth.js";
+import { requireEventOwner } from "../middlewares/event-access.js";
 import { notificationService } from "../services/notification.service.js";
 
 export const notificationRouter = Router({ mergeParams: true });
 
-notificationRouter.use(requireAuth);
+notificationRouter.use(requireAuth, requireEventOwner);
 
 notificationRouter.post(
   "/pre-event",

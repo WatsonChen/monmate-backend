@@ -1,41 +1,11 @@
 import { Router } from "express";
 import { z } from "zod";
 import { asyncHandler } from "../lib/async-handler.js";
-import { ok, AppError } from "../lib/http.js";
+import { ok } from "../lib/http.js";
 import { requireAuth } from "../middlewares/auth.js";
+import { requireEventAccess } from "../middlewares/event-access.js";
 import { checkInService } from "../services/check-in.service.js";
-import { prisma } from "../lib/prisma.js";
 import { CheckInMethod } from "@prisma/client";
-import type { NextFunction, Request, Response } from "express";
-
-// JWT 裡的 assignedEventId 可能是舊 token 導致為 null，
-// 此時從 DB 取最新值，避免要求使用者重新登入。
-function requireStaffOrAdmin(req: Request, _res: Response, next: NextFunction) {
-  if (!req.user) return next(new AppError(401, "UNAUTHORIZED", "請先登入"));
-  if (req.user.role !== "STAFF") return next();
-
-  // STAFF: 舊 token 仍可能只有 assignedEventId，先快速相容，再查多活動指派表。
-  const fromJwt = req.user.assignedEventId ?? null;
-  if (fromJwt !== null) {
-    if (fromJwt === req.params.eventId) return next();
-  }
-
-  prisma.eventStaffAssignment.findUnique({
-    where: { eventId_userId: { eventId: req.params.eventId, userId: req.user.id } }
-  })
-    .then(async (assignment) => {
-      if (assignment) return next();
-      const user = await prisma.user.findUnique({
-        where: { id: req.user!.id },
-        select: { assignedEventId: true }
-      });
-      if ((user?.assignedEventId ?? null) !== req.params.eventId) {
-        return next(new AppError(403, "FORBIDDEN", "無法操作非指派活動"));
-      }
-      return next();
-    })
-    .catch(next);
-}
 
 export const checkInRouter = Router({ mergeParams: true });
 
@@ -64,7 +34,7 @@ const selfCheckInSchema = z.object({
 checkInRouter.post(
   "/lookup",
   requireAuth,
-  requireStaffOrAdmin,
+  requireEventAccess,
   asyncHandler(async (req, res) => {
     const body = lookupSchema.parse(req.body);
     const [method, credential] =
@@ -80,7 +50,7 @@ checkInRouter.post(
 checkInRouter.post(
   "/qr",
   requireAuth,
-  requireStaffOrAdmin,
+  requireEventAccess,
   asyncHandler(async (req, res) => {
     const body = qrSchema.parse(req.body);
     const result = await checkInService.byQrToken(req.params.eventId, body.qrToken, body.count);
@@ -92,7 +62,7 @@ checkInRouter.post(
 checkInRouter.post(
   "/manual",
   requireAuth,
-  requireStaffOrAdmin,
+  requireEventAccess,
   asyncHandler(async (req, res) => {
     const body = manualSchema.parse(req.body);
     const result = await checkInService.byManualCode(req.params.eventId, body.checkInCode, body.count);
@@ -104,7 +74,7 @@ checkInRouter.post(
 checkInRouter.post(
   "/phone",
   requireAuth,
-  requireStaffOrAdmin,
+  requireEventAccess,
   asyncHandler(async (req, res) => {
     const body = phoneSchema.parse(req.body);
     const result = await checkInService.byPhone(req.params.eventId, body.phone, body.count);
@@ -126,7 +96,7 @@ checkInRouter.post(
 checkInRouter.get(
   "/logs",
   requireAuth,
-  requireStaffOrAdmin,
+  requireEventAccess,
   asyncHandler(async (req, res) => {
     const logs = await checkInService.listLogs(req.params.eventId);
     return ok(res, logs);

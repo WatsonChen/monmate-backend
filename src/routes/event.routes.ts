@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { asyncHandler } from "../lib/async-handler.js";
 import { ok, AppError } from "../lib/http.js";
 import { requireAuth } from "../middlewares/auth.js";
+import { requireEventAccess, requireEventOwner } from "../middlewares/event-access.js";
 import { eventService, FEATURE_UNLOCK_COSTS, type FeatureUnlockKey } from "../services/event.service.js";
 import { emailService } from "../services/email.service.js";
 import { createAttendeeWithUniqueCode } from "../services/attendee.service.js";
@@ -166,6 +167,7 @@ eventRouter.post(
 
 eventRouter.get(
   "/:eventId",
+  requireEventAccess,
   asyncHandler(async (req, res) => {
     const event = await eventService.get(req.params.eventId);
     return ok(res, event);
@@ -174,6 +176,7 @@ eventRouter.get(
 
 eventRouter.patch(
   "/:eventId",
+  requireEventOwner,
   asyncHandler(async (req, res) => {
     const body = updateEventSchema.parse(req.body);
     const event = await eventService.update(req.params.eventId, body);
@@ -183,6 +186,7 @@ eventRouter.patch(
 
 eventRouter.delete(
   "/:eventId",
+  requireEventOwner,
   asyncHandler(async (req, res) => {
     const result = await eventService.delete(req.params.eventId);
     return ok(res, result);
@@ -195,6 +199,7 @@ const unlockFeatureSchema = z.object({
 
 eventRouter.post(
   "/:eventId/unlock-feature",
+  requireEventOwner,
   asyncHandler(async (req, res) => {
     const { feature } = unlockFeatureSchema.parse(req.body);
     const event = await eventService.unlockFeature(req.params.eventId, req.user!.id, feature);
@@ -204,6 +209,7 @@ eventRouter.post(
 
 eventRouter.get(
   "/:eventId/analytics",
+  requireEventOwner,
   asyncHandler(async (req, res) => {
     const analytics = await eventService.getAnalytics(req.params.eventId);
     return ok(res, analytics);
@@ -212,6 +218,7 @@ eventRouter.get(
 
 eventRouter.get(
   "/:eventId/venue-qr",
+  requireEventAccess,
   asyncHandler(async (req, res) => {
     const event = await prisma.event.findUnique({
       where: { id: req.params.eventId },
@@ -230,6 +237,7 @@ eventRouter.get(
 
 eventRouter.post(
   "/:eventId/invite",
+  requireEventOwner,
   asyncHandler(async (req, res) => {
     const { template, senderName } = z.object({
       template: z.enum(["with-registration", "without-registration"]),
@@ -270,6 +278,7 @@ const createStaffSchema = z.object({
 
 eventRouter.get(
   "/:eventId/staff",
+  requireEventOwner,
   asyncHandler(async (req, res) => {
     const assignments = await prisma.eventStaffAssignment.findMany({
       where: { eventId: req.params.eventId },
@@ -290,6 +299,7 @@ eventRouter.get(
 
 eventRouter.post(
   "/:eventId/staff",
+  requireEventOwner,
   asyncHandler(async (req, res) => {
     const body = createStaffSchema.parse(req.body);
     const existing = await prisma.user.findUnique({ where: { email: body.email } });
@@ -341,6 +351,7 @@ eventRouter.post(
 
 eventRouter.delete(
   "/:eventId/staff/:staffId",
+  requireEventOwner,
   asyncHandler(async (req, res) => {
     const assignment = await prisma.eventStaffAssignment.findUnique({
       where: { eventId_userId: { eventId: req.params.eventId, userId: req.params.staffId } },

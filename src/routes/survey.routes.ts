@@ -3,6 +3,7 @@ import { z } from "zod";
 import { asyncHandler } from "../lib/async-handler.js";
 import { ok } from "../lib/http.js";
 import { requireAuth } from "../middlewares/auth.js";
+import { requireEventOwner } from "../middlewares/event-access.js";
 import { surveyService } from "../services/survey.service.js";
 
 export const surveyRouter = Router({ mergeParams: true });
@@ -10,6 +11,7 @@ export const surveyRouter = Router({ mergeParams: true });
 surveyRouter.get(
   "/",
   requireAuth,
+  requireEventOwner,
   asyncHandler(async (req, res) => {
     const survey = await surveyService.getOrCreate(req.params.eventId);
     return ok(res, survey);
@@ -19,6 +21,7 @@ surveyRouter.get(
 surveyRouter.put(
   "/",
   requireAuth,
+  requireEventOwner,
   asyncHandler(async (req, res) => {
     const body = z.object({
       title: z.string().optional(),
@@ -39,6 +42,7 @@ surveyRouter.put(
 surveyRouter.post(
   "/send",
   requireAuth,
+  requireEventOwner,
   asyncHandler(async (req, res) => {
     const result = await surveyService.sendSurvey(req.params.eventId);
     return ok(res, result);
@@ -48,6 +52,7 @@ surveyRouter.post(
 surveyRouter.get(
   "/responses",
   requireAuth,
+  requireEventOwner,
   asyncHandler(async (req, res) => {
     const survey = await surveyService.getOrCreate(req.params.eventId);
     const responses = await surveyService.getResponses(survey.id);

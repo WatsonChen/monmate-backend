@@ -5,7 +5,8 @@ import { z } from "zod";
 import { asyncHandler } from "../lib/async-handler.js";
 import { AppError, ok } from "../lib/http.js";
 import { requireAuth } from "../middlewares/auth.js";
-import { attendeeService } from "../services/attendee.service.js";
+import { requireEventAccess, requireEventOwner } from "../middlewares/event-access.js";
+import { attendeeService, PUBLIC_MAX_CAPACITY } from "../services/attendee.service.js";
 import { eventService } from "../services/event.service.js";
 import { emailService } from "../services/email.service.js";
 import { prisma } from "../lib/prisma.js";
@@ -33,7 +34,7 @@ attendeeRouter.post(
       email: z.string().email().optional().or(z.literal("")),
       age: z.coerce.number().int().min(1).max(120).optional(),
       gender: z.enum(["M", "F", "OTHER"]).optional(),
-      capacity: z.coerce.number().int().min(1).max(999).optional(),
+      capacity: z.coerce.number().int().min(1).max(PUBLIC_MAX_CAPACITY).optional(),
       customFields: z.record(z.string(), z.union([z.string(), z.number()])).optional()
     }).parse(req.body);
     const attendee = await attendeeService.completeRegistration(req.params.eventId, body.token, body);
@@ -45,6 +46,7 @@ attendeeRouter.use(requireAuth);
 
 attendeeRouter.get(
   "/",
+  requireEventAccess,
   asyncHandler(async (req, res) => {
     const { search, status } = z.object({
       search: z.string().optional(),
@@ -57,6 +59,7 @@ attendeeRouter.get(
 
 attendeeRouter.post(
   "/",
+  requireEventOwner,
   asyncHandler(async (req, res) => {
     const body = z.object({
       name: z.string().min(1, "姓名不能為空"),
@@ -71,6 +74,7 @@ attendeeRouter.post(
 
 attendeeRouter.post(
   "/import",
+  requireEventOwner,
   upload.single("file") as never,
   asyncHandler(async (req, res) => {
     if (!req.file) throw new AppError(400, "FILE_REQUIRED", "請上傳檔案");
@@ -81,6 +85,7 @@ attendeeRouter.post(
 
 attendeeRouter.get(
   "/export",
+  requireEventOwner,
   asyncHandler(async (req, res) => {
     const { format } = z.object({
       format: z.enum(["csv", "xlsx"]).default("csv")
@@ -102,6 +107,7 @@ attendeeRouter.get(
 
 attendeeRouter.patch(
   "/:attendeeId",
+  requireEventAccess,
   asyncHandler(async (req, res) => {
     const body = z.object({
       name: z.string().min(1).optional(),
@@ -116,6 +122,11 @@ attendeeRouter.patch(
       customFields: z.record(z.string(), z.union([z.string(), z.number()])).nullable().optional(),
       note: z.string().nullable().optional()
     }).parse(req.body);
+    // 工作人員只能編輯備註；其餘欄位（含人數、報到狀態）僅限主辦
+    if (req.user!.role === "STAFF") {
+      const forbidden = Object.keys(body).filter((k) => k !== "note");
+      if (forbidden.length > 0) throw new AppError(403, "FORBIDDEN", "工作人員僅能編輯備註");
+    }
     const attendee = await attendeeService.update(req.params.eventId, req.params.attendeeId, body);
     return ok(res, attendee);
   })
@@ -123,6 +134,7 @@ attendeeRouter.patch(
 
 attendeeRouter.post(
   "/:attendeeId/invite",
+  requireEventOwner,
   asyncHandler(async (req, res) => {
     const { template } = z.object({
       template: z.enum(["with-registration", "without-registration"]).default("without-registration")

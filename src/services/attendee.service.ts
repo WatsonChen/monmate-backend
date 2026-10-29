@@ -11,6 +11,9 @@ import { eventService } from "./event.service.js";
 const CHECKIN_CODE_CHARS = "23456789ABCDEFGHJKMNPQRSTUVWXYZ";
 const CHECKIN_CODE_LENGTH = 5;
 
+// 公開報名頁單一報名者（含攜伴）人數上限
+export const PUBLIC_MAX_CAPACITY = 20;
+
 function randomCheckInCode() {
   let code = "";
   for (let i = 0; i < CHECKIN_CODE_LENGTH; i++) {
@@ -65,6 +68,42 @@ function parseGender(value: string | null | undefined): Gender | undefined {
   if (v === "F" || v === "女") return Gender.F;
   if (v === "OTHER" || v === "其他") return Gender.OTHER;
   return undefined;
+}
+
+// 調高人數（含攜伴）時，補扣差額並寫入帳本；調低不退（與匯入規則一致）。
+// 一律在呼叫端的 transaction 內執行，餘額不足時整筆拒絕。
+async function chargeCapacityIncrease(
+  tx: Prisma.TransactionClient,
+  params: { ownerId: string; eventId: string; attendeeId: string; delta: number; note: string }
+) {
+  const { ownerId, eventId, attendeeId, delta, note } = params;
+  if (delta <= 0) return;
+  const charged = await tx.user.updateMany({
+    where: { id: ownerId, attendeeCredits: { gte: delta } },
+    data: { attendeeCredits: { decrement: delta } }
+  });
+  if (charged.count === 0) {
+    throw new AppError(402, "INSUFFICIENT_ATTENDEE_CREDITS", `報到人數額度不足，調高人數需 ${delta} 個額度。`);
+  }
+  const owner = await tx.user.findUniqueOrThrow({ where: { id: ownerId }, select: { attendeeCredits: true } });
+  await tx.creditTransaction.create({
+    data: { userId: ownerId, amount: -delta, reason: "ATTENDEE_CREATE", balanceAfter: owner.attendeeCredits, eventId, attendeeId, note }
+  });
+}
+
+// 未開放超額時，調高人數不得超過活動人數上限
+async function assertCapacityRoom(
+  tx: Prisma.TransactionClient,
+  event: { attendeeLimit: number | null; allowOverCapacity: boolean },
+  eventId: string,
+  delta: number
+) {
+  if (event.allowOverCapacity || !event.attendeeLimit || delta <= 0) return;
+  const agg = await tx.attendee.aggregate({ where: { eventId }, _sum: { checkInCapacity: true } });
+  const headcount = agg._sum.checkInCapacity ?? 0;
+  if (headcount + delta > event.attendeeLimit) {
+    throw new AppError(409, "CAPACITY_FULL", `已達人數上限（上限 ${event.attendeeLimit} 人、現有 ${headcount} 人）。`);
+  }
 }
 
 export const attendeeService = {
@@ -354,7 +393,8 @@ export const attendeeService = {
   ) {
     const attendee = await attendeeRepository.findById(attendeeId);
     if (!attendee || attendee.eventId !== eventId) throw new AppError(404, "ATTENDEE_NOT_FOUND", "找不到報名資料");
-    return attendeeRepository.update(attendeeId, {
+
+    const data = {
       name: input.name,
       phone: input.phone,
       email: input.email === undefined ? undefined : input.email,
@@ -366,6 +406,23 @@ export const attendeeService = {
       checkInCount: input.checkInCount,
       customFields: input.customFields === undefined ? undefined : input.customFields ?? Prisma.JsonNull,
       note: input.note === undefined ? undefined : input.note
+    };
+
+    const delta = input.checkInCapacity === undefined ? 0 : input.checkInCapacity - attendee.checkInCapacity;
+    if (delta <= 0) return attendeeRepository.update(attendeeId, data);
+
+    const event = await prisma.event.findUnique({
+      where: { id: eventId },
+      select: { createdById: true, attendeeLimit: true, allowOverCapacity: true }
+    });
+    if (!event) throw new AppError(404, "EVENT_NOT_FOUND", "找不到活動");
+
+    return prisma.$transaction(async (tx) => {
+      await assertCapacityRoom(tx, event, eventId, delta);
+      await chargeCapacityIncrease(tx, {
+        ownerId: event.createdById, eventId, attendeeId, delta, note: "調高人數"
+      });
+      return tx.attendee.update({ where: { id: attendeeId }, data });
     });
   },
 
@@ -383,17 +440,36 @@ export const attendeeService = {
   ) {
     const attendee = await attendeeRepository.findByQrToken(eventId, qrToken);
     if (!attendee) throw new AppError(404, "ATTENDEE_NOT_FOUND", "找不到報名資料，請確認連結是否正確");
-    return prisma.attendee.update({
-      where: { id: attendee.id },
-      data: {
-        name: input.name,
-        email: input.email || null,
-        age: input.age ?? null,
-        gender: input.gender ?? null,
-        checkInCapacity: input.capacity ?? undefined,
-        customFields: input.customFields ?? undefined
-      },
-      select: { id: true, name: true, phone: true, checkInCode: true, qrToken: true, checkInStatus: true }
+
+    // 公開頁只能「調高」人數（含攜伴），不能調低再重填，避免重複扣點；每人上限 PUBLIC_MAX_CAPACITY
+    const requested = Math.min(input.capacity ?? attendee.checkInCapacity, PUBLIC_MAX_CAPACITY);
+    const nextCapacity = Math.max(attendee.checkInCapacity, requested);
+    const delta = nextCapacity - attendee.checkInCapacity;
+
+    const event = await prisma.event.findUnique({
+      where: { id: eventId },
+      select: { createdById: true, attendeeLimit: true, allowOverCapacity: true }
+    });
+    if (!event) throw new AppError(404, "EVENT_NOT_FOUND", "找不到活動");
+
+    return prisma.$transaction(async (tx) => {
+      await assertCapacityRoom(tx, event, eventId, delta);
+      // 攜伴加人由主辦點數支付；餘額不足時整筆更新被拒絕（delta 為 0 時不扣點、不受影響）
+      await chargeCapacityIncrease(tx, {
+        ownerId: event.createdById, eventId, attendeeId: attendee.id, delta, note: "公開報名攜伴"
+      });
+      return tx.attendee.update({
+        where: { id: attendee.id },
+        data: {
+          name: input.name,
+          email: input.email || null,
+          age: input.age ?? null,
+          gender: input.gender ?? null,
+          checkInCapacity: delta > 0 ? nextCapacity : undefined,
+          customFields: input.customFields ?? undefined
+        },
+        select: { id: true, name: true, phone: true, checkInCode: true, qrToken: true, checkInStatus: true }
+      });
     });
   }
 };
