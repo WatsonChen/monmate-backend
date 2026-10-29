@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "monmate-backend",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeExecutable": "yarn",
+      "runtimeArgs": ["dev"],
       "port": 4000
     }
   ]
