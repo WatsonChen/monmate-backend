@@ -8,6 +8,7 @@ import { requireAuth } from "../middlewares/auth.js";
 import { requireEventAccess, requireEventOwner } from "../middlewares/event-access.js";
 import { attendeeService, PUBLIC_MAX_CAPACITY } from "../services/attendee.service.js";
 import { eventService } from "../services/event.service.js";
+import { importService } from "../services/import.service.js";
 import { emailService } from "../services/email.service.js";
 import { prisma } from "../lib/prisma.js";
 import { env } from "../config/env.js";
@@ -72,14 +73,62 @@ attendeeRouter.post(
   })
 );
 
+const decisionSchema = z.object({
+  action: z.enum(["UPDATE", "NEW", "SKIP"]),
+  targetId: z.string().optional()
+});
+
+// 匯入分三步：上傳預覽（不寫入）→ 逐筆處理疑似重複 → 確認後才新增、更新與扣點
 attendeeRouter.post(
-  "/import",
+  "/import/preview",
   requireEventOwner,
   upload.single("file") as never,
   asyncHandler(async (req, res) => {
     if (!req.file) throw new AppError(400, "FILE_REQUIRED", "請上傳檔案");
-    const result = await attendeeService.importFromFile(req.params.eventId, req.file.buffer, req.user!.id);
-    return ok(res, result, 201);
+    // multer 以 latin1 解讀檔名，轉回 UTF-8 才不會讓中文檔名變亂碼
+    const fileName = Buffer.from(req.file.originalname, "latin1").toString("utf8");
+    const preview = await importService.createPreview(req.params.eventId, req.user!.id, fileName, req.file.buffer);
+    return ok(res, preview, 201);
+  })
+);
+
+attendeeRouter.get(
+  "/imports",
+  requireEventOwner,
+  asyncHandler(async (req, res) => {
+    return ok(res, await importService.listHistory(req.params.eventId, req.user!.id));
+  })
+);
+
+attendeeRouter.get(
+  "/import/:sessionId",
+  requireEventOwner,
+  asyncHandler(async (req, res) => {
+    return ok(res, await importService.getPreview(req.params.eventId, req.user!.id, req.params.sessionId));
+  })
+);
+
+attendeeRouter.put(
+  "/import/:sessionId/decisions",
+  requireEventOwner,
+  asyncHandler(async (req, res) => {
+    const body = z.object({
+      decisions: z.record(z.string(), decisionSchema).optional(),
+      bulk: z.enum(["ALL_NEW", "ALL_SKIP"]).optional()
+    }).parse(req.body);
+    return ok(res, await importService.setDecisions(req.params.eventId, req.user!.id, req.params.sessionId, body));
+  })
+);
+
+attendeeRouter.post(
+  "/import/:sessionId/confirm",
+  requireEventOwner,
+  asyncHandler(async (req, res) => {
+    const body = z.object({
+      expectedCost: z.number().int().min(0),
+      decisions: z.record(z.string(), decisionSchema).optional()
+    }).parse(req.body);
+    return ok(res, await importService.confirm(req.params.eventId, req.user!.id, req.params.sessionId, body));
   })
 );
 

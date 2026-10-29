@@ -5,6 +5,7 @@ import { toCsvCell } from "@monmate/utils";
 import { AppError } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
 import { attendeeRepository } from "../repositories/attendee.repository.js";
+import { chargeWallet } from "./credit-wallet.service.js";
 import { eventService } from "./event.service.js";
 
 // 排除易混淆字元 0/O、1/I/L
@@ -44,9 +45,13 @@ export async function createAttendeeWithUniqueCode<T>(create: (checkInCode: stri
 }
 
 // 匯入時一次生成整批不重複的碼（含比對同活動內既有的碼）
-async function generateUniqueCheckInCodes(eventId: string, count: number): Promise<string[]> {
+export async function generateUniqueCheckInCodes(
+  eventId: string,
+  count: number,
+  db: Pick<Prisma.TransactionClient, "attendee"> = prisma
+): Promise<string[]> {
   const used = new Set(
-    (await prisma.attendee.findMany({ where: { eventId }, select: { checkInCode: true } })).map((a) => a.checkInCode)
+    (await db.attendee.findMany({ where: { eventId }, select: { checkInCode: true } })).map((a) => a.checkInCode)
   );
   const codes: string[] = [];
   while (codes.length < count) {
@@ -58,11 +63,11 @@ async function generateUniqueCheckInCodes(eventId: string, count: number): Promi
   return codes;
 }
 
-function createQrToken() {
+export function createQrToken() {
   return randomBytes(18).toString("base64url");
 }
 
-function parseGender(value: string | null | undefined): Gender | undefined {
+export function parseGender(value: string | null | undefined): Gender | undefined {
   const v = String(value ?? "").trim().toUpperCase();
   if (v === "M" || v === "男") return Gender.M;
   if (v === "F" || v === "女") return Gender.F;
@@ -78,17 +83,7 @@ async function chargeCapacityIncrease(
 ) {
   const { ownerId, eventId, attendeeId, delta, note } = params;
   if (delta <= 0) return;
-  const charged = await tx.user.updateMany({
-    where: { id: ownerId, attendeeCredits: { gte: delta } },
-    data: { attendeeCredits: { decrement: delta } }
-  });
-  if (charged.count === 0) {
-    throw new AppError(402, "INSUFFICIENT_ATTENDEE_CREDITS", `報到人數額度不足，調高人數需 ${delta} 個額度。`);
-  }
-  const owner = await tx.user.findUniqueOrThrow({ where: { id: ownerId }, select: { attendeeCredits: true } });
-  await tx.creditTransaction.create({
-    data: { userId: ownerId, amount: -delta, reason: "ATTENDEE_CREATE", balanceAfter: owner.attendeeCredits, eventId, attendeeId, note }
-  });
+  await chargeWallet(tx, { userId: ownerId, amount: delta, reason: "ATTENDEE_CREATE", eventId, attendeeId, note });
 }
 
 // 未開放超額時，調高人數不得超過活動人數上限
@@ -142,179 +137,16 @@ export const attendeeService = {
         }
       }
 
-      const user = await tx.user.findUnique({ where: { id: userId }, select: { attendeeCredits: true } });
-      if (!user) throw new AppError(404, "USER_NOT_FOUND", "找不到使用者");
-      // 按人頭扣點：一筆報名者含攜伴需扣 checkInCapacity 個額度
-      if (user.attendeeCredits < checkInCapacity) {
-        throw new AppError(
-          402,
-          "INSUFFICIENT_ATTENDEE_CREDITS",
-          `報到人數額度不足，此筆需 ${checkInCapacity} 個額度，目前剩餘 ${user.attendeeCredits} 個，請購買額度。`
-        );
-      }
-      await tx.user.update({ where: { id: userId }, data: { attendeeCredits: { decrement: checkInCapacity } } });
       const attendee = await createAttendeeWithUniqueCode((checkInCode) =>
         tx.attendee.create({
           data: { eventId, name: input.name.trim(), phone: input.phone.trim(), email: input.email?.trim() || null, checkInCapacity, checkInCode, qrToken },
           select: { id: true, eventId: true, name: true, phone: true, email: true, checkInCode: true, qrToken: true, checkInStatus: true, checkedInAt: true, checkInCapacity: true, checkInCount: true }
         })
       );
-      await tx.creditTransaction.create({
-        data: {
-          userId,
-          amount: -checkInCapacity,
-          reason: "ATTENDEE_CREATE",
-          balanceAfter: user.attendeeCredits - checkInCapacity,
-          eventId,
-          attendeeId: attendee.id
-        }
-      });
+      // 按人頭扣點：一筆報名者含攜伴需扣 checkInCapacity 個額度；扣點與建立名單同一個 transaction
+      await chargeWallet(tx, { userId, amount: checkInCapacity, reason: "ATTENDEE_CREATE", eventId, attendeeId: attendee.id });
       return attendee;
     });
-  },
-
-  async importFromFile(eventId: string, fileBuffer: Buffer, userId: string) {
-    const event = await eventService.get(eventId);
-
-    const workbook = XLSX.read(fileBuffer, { type: "buffer", cellText: false, cellDates: true });
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 });
-
-    if (rows.length < 2) throw new AppError(400, "EMPTY_IMPORT", "匯入檔案沒有資料");
-
-    const rawHeader = (rows[0] as unknown[]).map((cell) => String(cell ?? "").trim());
-    const header = rawHeader.map((h) => h.toLowerCase());
-    const col = (names: string[]) => header.findIndex((h) => names.includes(h));
-
-    const nameIdx  = col(["name", "姓名"]);
-    const phoneIdx = col(["phone", "電話", "手機"]);
-    const emailIdx = col(["email", "信箱"]);
-    const ageIdx   = col(["age", "年齡"]);
-    const genderIdx = col(["gender", "性別"]);
-
-    if (nameIdx < 0 || phoneIdx < 0) {
-      throw new AppError(400, "INVALID_COLUMNS", "檔案需包含「姓名」與「電話」欄位");
-    }
-
-    // 偵測人數欄：攜伴人數（需+1）或報名人數（直接用）
-    const capacityColIdx = rawHeader.findIndex((h) =>
-      /攜伴|companion|報名人數|參加人數|人數/i.test(h)
-    );
-    const isCompanionCol = capacityColIdx >= 0 && /攜伴|companion/i.test(rawHeader[capacityColIdx]);
-
-    function parseCapacityValue(raw: string, isCompanion: boolean): number {
-      const n = parseInt(raw, 10);
-      if (isNaN(n) || n <= 0) return 1;
-      // 攜伴人數欄：加本人；報名人數欄：直接使用
-      return isCompanion ? n + 1 : n;
-    }
-
-    const knownIdx = new Set(
-      [nameIdx, phoneIdx, emailIdx, ageIdx, genderIdx, capacityColIdx].filter((i) => i >= 0)
-    );
-    const extraCols = rawHeader
-      .map((label, i) => ({ label, i }))
-      .filter(({ i }) => !knownIdx.has(i) && rawHeader[i]);
-
-    const dataRows = rows.slice(1);
-    const checkInCodes = await generateUniqueCheckInCodes(eventId, dataRows.length);
-
-    const attendees = dataRows
-      .map((row, index) => {
-        const r = row as unknown[];
-        const customFields: Record<string, string> = {};
-        for (const { label, i } of extraCols) {
-          const val = String(r[i] ?? "").trim();
-          if (val) customFields[label] = val;
-        }
-        const checkInCapacity = capacityColIdx >= 0
-          ? parseCapacityValue(String(r[capacityColIdx] ?? "").trim(), isCompanionCol)
-          : 1;
-        return {
-          eventId,
-          name:  String(r[nameIdx]  ?? "").trim(),
-          phone: String(r[phoneIdx] ?? "").trim(),
-          email:   emailIdx  >= 0 ? (String(r[emailIdx]  ?? "").trim() || undefined) : undefined,
-          age:     ageIdx    >= 0 ? (Number(r[ageIdx])   || undefined) : undefined,
-          gender:  genderIdx >= 0 ? parseGender(String(r[genderIdx] ?? "")) : undefined,
-          customFields: Object.keys(customFields).length > 0 ? customFields : undefined,
-          checkInCapacity,
-          checkInCode: checkInCodes[index],
-          qrToken: createQrToken()
-        };
-      })
-      .filter((row) => row.name && row.phone);
-
-    if (attendees.length === 0) throw new AppError(400, "EMPTY_IMPORT", "沒有有效的報名資料");
-
-    await prisma.$transaction(async (tx) => {
-      const existingPhoneMap = new Map(
-        (await tx.attendee.findMany({
-          where: { eventId, phone: { in: attendees.map((a) => a.phone) } },
-          select: { id: true, phone: true, checkInCapacity: true }
-        })).map((a) => [a.phone, { id: a.id, checkInCapacity: a.checkInCapacity }])
-      );
-
-      const toCreate = attendees.filter((a) => !existingPhoneMap.has(a.phone));
-      const toUpdate = attendees.filter((a) => existingPhoneMap.has(a.phone));
-
-      // 按人頭扣點：
-      // - 新報名者：扣各筆 checkInCapacity（含攜伴）的加總
-      // - 既有報名者重新匯入：人數調高時補扣差額（只補正差，調低不退款以免反覆匯入套現）
-      const createCost = toCreate.reduce((sum, a) => sum + a.checkInCapacity, 0);
-      const updateCost = toUpdate.reduce((sum, a) => {
-        const prev = existingPhoneMap.get(a.phone)!.checkInCapacity;
-        return sum + Math.max(0, a.checkInCapacity - prev);
-      }, 0);
-      const totalCost = createCost + updateCost;
-
-      // 未開放超額時，用人頭判斷整批匯入是否會超過人數上限（超過則整批拒絕）
-      if (!event.allowOverCapacity && event.attendeeLimit) {
-        const agg = await tx.attendee.aggregate({ where: { eventId }, _sum: { checkInCapacity: true } });
-        const currentHeadcount = agg._sum.checkInCapacity ?? 0;
-        const added = createCost + updateCost;
-        if (currentHeadcount + added > event.attendeeLimit) {
-          throw new AppError(
-            409,
-            "CAPACITY_FULL",
-            `此批匯入將超過人數上限（上限 ${event.attendeeLimit} 人、現有 ${currentHeadcount} 人、本批新增 ${added} 人）。如需超額，請於活動設定開啟「允許超額報名」。`
-          );
-        }
-      }
-
-      const user = await tx.user.findUnique({ where: { id: userId }, select: { attendeeCredits: true } });
-      if (!user) throw new AppError(404, "USER_NOT_FOUND", "找不到使用者");
-      if (user.attendeeCredits < totalCost) {
-        throw new AppError(
-          402,
-          "INSUFFICIENT_ATTENDEE_CREDITS",
-          `報到人數額度不足。需要 ${totalCost} 個額度，目前剩餘 ${user.attendeeCredits} 個。`
-        );
-      }
-      if (toCreate.length > 0) {
-        await tx.attendee.createMany({ data: toCreate });
-      }
-      for (const a of toUpdate) {
-        await tx.attendee.update({
-          where: { id: existingPhoneMap.get(a.phone)!.id },
-          data: { checkInCapacity: a.checkInCapacity, customFields: a.customFields ?? undefined }
-        });
-      }
-      if (totalCost > 0) {
-        await tx.user.update({ where: { id: userId }, data: { attendeeCredits: { decrement: totalCost } } });
-        await tx.creditTransaction.create({
-          data: {
-            userId,
-            amount: -totalCost,
-            reason: "ATTENDEE_IMPORT",
-            balanceAfter: user.attendeeCredits - totalCost,
-            eventId
-          }
-        });
-      }
-    });
-
-    return { imported: attendees.length };
   },
 
   async exportCsv(eventId: string) {
@@ -353,7 +185,7 @@ export const attendeeService = {
     const customKeyList = Array.from(customKeys);
     const customLabel = (key: string) => configCustomFields.find((f) => f.key === key)?.label || key;
 
-    const header = ["姓名", "電話", "Email", "年齡", "性別", "報到碼", "報名人數", "實際報到人數", "報到狀態", "報到時間", "報到方式", "備註", ...customKeyList.map(customLabel)];
+    const header = ["姓名", "電話", "Email", "年齡", "性別", "報到碼", "報名人數", "實際報到人數", "報到狀態", "報到時間", "報到方式", "備註", "報名編號", ...customKeyList.map(customLabel)];
     const rows = attendees.map((a) => {
       const cf = (a.customFields ?? {}) as Record<string, unknown>;
       return [
@@ -368,6 +200,7 @@ export const attendeeService = {
         a.checkedInAt?.toISOString() ?? "",
         latestMethod.get(a.id) ?? "",
         a.note ?? "",
+        a.id,
         ...customKeyList.map((k) => cf[k] ?? "")
       ];
     });
@@ -453,11 +286,25 @@ export const attendeeService = {
     if (!event) throw new AppError(404, "EVENT_NOT_FOUND", "找不到活動");
 
     return prisma.$transaction(async (tx) => {
-      await assertCapacityRoom(tx, event, eventId, delta);
-      // 攜伴加人由主辦點數支付；餘額不足時整筆更新被拒絕（delta 為 0 時不扣點、不受影響）
-      await chargeCapacityIncrease(tx, {
-        ownerId: event.createdById, eventId, attendeeId: attendee.id, delta, note: "公開報名攜伴"
-      });
+      try {
+        await assertCapacityRoom(tx, event, eventId, delta);
+      } catch (err) {
+        // 不對參加者揭露活動的人數上限與目前報名人數
+        if (err instanceof AppError && err.code === "CAPACITY_FULL") throw new AppError(409, "CAPACITY_FULL", "此活動報名名額已滿");
+        throw err;
+      }
+      // 攜伴加人由主辦點數支付；餘額不足時整筆更新被拒絕（delta 為 0 時不扣點、不受影響）。
+      // 參加者看不到主辦的餘額或帳務資訊，只會得到一般的「無法完成報名」。
+      try {
+        await chargeCapacityIncrease(tx, {
+          ownerId: event.createdById, eventId, attendeeId: attendee.id, delta, note: "公開報名攜伴"
+        });
+      } catch (err) {
+        if (err instanceof AppError && err.code === "INSUFFICIENT_ATTENDEE_CREDITS") {
+          throw new AppError(409, "REGISTRATION_UNAVAILABLE", "目前無法完成報名，請聯絡主辦單位");
+        }
+        throw err;
+      }
       return tx.attendee.update({
         where: { id: attendee.id },
         data: {

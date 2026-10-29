@@ -39,6 +39,25 @@ export const pricingTiers = [
   }
 ] as const;
 
+// 付款完成後只允許回到站內的後台頁面（帳務頁或某個活動頁），避免被當成開放式轉址
+const RETURN_TO_PATTERN = /^\/admin\/(billing|events\/[A-Za-z0-9_-]+)(\?[A-Za-z0-9_=&-]*)?$/;
+
+export function sanitizeReturnTo(value: string | undefined) {
+  if (!value) return undefined;
+  if (!RETURN_TO_PATTERN.test(value)) throw new AppError(400, "INVALID_RETURN_TO", "不支援的返回位置");
+  return value;
+}
+
+function withQuery(path: string, params: Record<string, string>) {
+  const [base, query = ""] = path.split("?");
+  const search = new URLSearchParams(query);
+  for (const [k, v] of Object.entries(params)) search.set(k, v);
+  return `${base}?${search.toString()}`;
+}
+
+// 付款超過這段時間仍在「確認中」，前端改顯示逾時並提供重新付款
+const PENDING_STALE_MS = 60 * 60 * 1000;
+
 function getPricingTier(tierId: string) {
   const tier = pricingTiers.find((item) => item.id === tierId);
   if (!tier) throw new AppError(400, "INVALID_PRICING_TIER", "不支援的方案");
@@ -148,6 +167,8 @@ async function applyPaidPayment(decoded: NewebPayResult) {
   if (!result.MerchantOrderNo) throw new AppError(400, "PAYMENT_ORDER_MISSING", "缺少商店訂單編號");
 
   const outcome = await prisma.$transaction(async (tx) => {
+    // 先鎖住這筆付款：藍新 notify 與 return 可能同時（或重複）送達，沒有鎖時兩邊都會判斷「尚未入帳」而各加一次點
+    await tx.$queryRaw`SELECT id FROM "Payment" WHERE "providerOrderNo" = ${result.MerchantOrderNo} FOR UPDATE`;
     const payment = await tx.payment.findUnique({ where: { providerOrderNo: result.MerchantOrderNo } });
     if (!payment) throw new AppError(404, "PAYMENT_NOT_FOUND", "找不到付款紀錄");
 
@@ -253,7 +274,8 @@ export const billingService = {
     };
   },
 
-  async createCheckoutSession(userId: string, tierId: string) {
+  async createCheckoutSession(userId: string, tierId: string, returnToInput?: string) {
+    const returnTo = sanitizeReturnTo(returnToInput);
     const config = requireNewebPayConfig();
     const tier = getPricingTier(tierId);
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
@@ -271,7 +293,8 @@ export const billingService = {
         pricingTier: tier.id,
         attendeeLimit: tier.attendeeCredits,
         providerOrderNo: merchantOrderNo,
-        checkoutUrl: config.apiUrl
+        checkoutUrl: config.apiUrl,
+        returnTo
       }
     });
 
@@ -286,7 +309,10 @@ export const billingService = {
         ItemDesc: `MonMate ${tier.label} ${tier.attendeeCredits} 人報到額度`,
         ReturnURL: appUrl(env.API_BASE_URL, "/billing/newebpay/return"),
         NotifyURL: appUrl(env.API_BASE_URL, "/billing/newebpay/notify"),
-        ClientBackURL: appUrl(env.WEB_APP_URL, "/admin/billing"),
+        ClientBackURL: appUrl(
+          env.WEB_APP_URL,
+          withQuery(returnTo ?? "/admin/billing", { payment: "back", paymentId: payment.id })
+        ),
         LoginType: "0", CREDIT: "1", WEBATM: "0", VACC: "0", CVS: "0", BARCODE: "0"
       },
       config.hashKey, config.hashIv
@@ -335,12 +361,42 @@ export const billingService = {
   },
 
   async getNewebPayReturnUrl(body: Record<string, unknown>) {
+    // 這裡的狀態只用來決定導向哪個畫面；真正入帳一律由後端驗簽後的 applyPaidPayment 完成，
+    // 前端看到成功頁並不代表已加點，前端要再向 /billing/payments/:id 確認。
+    let orderNo: string | undefined;
+    try {
+      const config = requireNewebPayConfig();
+      const tradeInfo = getBodyValue(body, "TradeInfo");
+      if (tradeInfo) orderNo = getResult(decryptTradeInfo(tradeInfo, config.hashKey, config.hashIv)).MerchantOrderNo;
+    } catch {
+      orderNo = undefined;
+    }
+    let state = "failed";
     try {
       const result = await this.handleNewebPayNotify(body);
-      const status = "paymentId" in result && result.paymentId ? "success" : "pending";
-      return appUrl(env.WEB_APP_URL, `/admin/billing?payment=${status}`);
+      state = result.status === "SUCCESS" && "paymentId" in result && result.paymentId ? "success" : "failed";
     } catch {
-      return appUrl(env.WEB_APP_URL, "/admin/billing?payment=failed");
+      state = "failed";
     }
+    const payment = orderNo
+      ? await prisma.payment.findUnique({ where: { providerOrderNo: orderNo }, select: { id: true, returnTo: true } })
+      : null;
+    const target = payment?.returnTo ?? "/admin/billing";
+    return appUrl(env.WEB_APP_URL, withQuery(target, { payment: state, ...(payment ? { paymentId: payment.id } : {}) }));
+  },
+
+  // 付款狀態查詢：只能查自己的付款；PENDING 太久回報為逾時，仍可能因藍新通知延遲而之後入帳
+  async getPayment(userId: string, paymentId: string) {
+    const payment = await prisma.payment.findFirst({
+      where: { id: paymentId, userId },
+      select: {
+        id: true, status: true, amountTotal: true, pricingTier: true, attendeeLimit: true,
+        creditsGranted: true, createdAt: true, paidAt: true
+      }
+    });
+    if (!payment) throw new AppError(404, "PAYMENT_NOT_FOUND", "找不到付款紀錄");
+    const user = await prisma.user.findUniqueOrThrow({ where: { id: userId }, select: { attendeeCredits: true } });
+    const stale = payment.status === PaymentStatus.PENDING && Date.now() - payment.createdAt.getTime() > PENDING_STALE_MS;
+    return { ...payment, stale, balance: user.attendeeCredits };
   }
 };

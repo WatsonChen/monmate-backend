@@ -14,7 +14,7 @@ export function errorHandler(
   _next: NextFunction
 ) {
   if (error instanceof AppError) {
-    return fail(res, error.statusCode, error.code, error.message);
+    return fail(res, error.statusCode, error.code, error.message, error.details);
   }
 
   if (error instanceof ZodError) {

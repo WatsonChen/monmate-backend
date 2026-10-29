@@ -1,7 +1,11 @@
 export type ApiError = {
   code: string;
   message: string;
+  details?: unknown;
 };
+
+// 點數錢包最低可用餘額：帳戶層級的臨時額度（最多可先使用 3 點）
+export const CREDIT_FLOOR = -3;
 
 export type ApiResponse<T> = {
   success: boolean;

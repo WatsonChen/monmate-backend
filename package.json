@@ -17,7 +17,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "test": "vitest run",
+    "test:db": "DATABASE_URL=postgresql://$USER@localhost:5432/monmate_test?schema=public DIRECT_URL=postgresql://$USER@localhost:5432/monmate_test?schema=public prisma migrate deploy"
   },
   "dependencies": {
     "@monmate/types": "*",
@@ -48,7 +50,8 @@
     "esbuild": "^0.24.0",
     "prisma": "^5.22.0",
     "tsx": "^4.19.2",
-    "typescript": "^5.6.3"
+    "typescript": "^5.6.3",
+    "vitest": "^2"
   },
   "engines": {
     "yarn": ">=1.22.0 <2"

@@ -8,7 +8,8 @@ import { billingService } from "../services/billing.service.js";
 export const billingRouter = Router();
 
 const checkoutSchema = z.object({
-  tierId: z.string().min(1)
+  tierId: z.string().min(1),
+  returnTo: z.string().optional()
 });
 
 billingRouter.post(
@@ -62,8 +63,16 @@ billingRouter.post(
     const body = checkoutSchema.parse(req.body);
     const session = await billingService.createCheckoutSession(
       req.user!.id,
-      body.tierId
+      body.tierId,
+      body.returnTo
     );
     return ok(res, session, 201);
+  })
+);
+
+billingRouter.get(
+  "/payments/:paymentId",
+  asyncHandler(async (req, res) => {
+    return ok(res, await billingService.getPayment(req.user!.id, req.params.paymentId));
   })
 );

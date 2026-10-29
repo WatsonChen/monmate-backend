@@ -7,6 +7,7 @@ import { requireAuth } from "../middlewares/auth.js";
 import { requireEventAccess, requireEventOwner } from "../middlewares/event-access.js";
 import { eventService, FEATURE_UNLOCK_COSTS, type FeatureUnlockKey } from "../services/event.service.js";
 import { emailService } from "../services/email.service.js";
+import { chargeWallet } from "../services/credit-wallet.service.js";
 import { createAttendeeWithUniqueCode } from "../services/attendee.service.js";
 import { prisma } from "../lib/prisma.js";
 import { env } from "../config/env.js";
@@ -114,33 +115,33 @@ eventRouter.post(
     });
     if (!owner) throw new AppError(404, "EVENT_NOT_FOUND", "找不到活動");
 
-    // 公開報名依人頭扣 1 點（公開報名無攜伴，capacity 固定 1）。
-    // 允許超發：主辦額度可扣為負、永不擋來賓報名（見產品決策）。
-    const attendee = await createAttendeeWithUniqueCode((checkInCode) =>
-      prisma.$transaction(async (tx) => {
-        const created = await tx.attendee.create({
-          data: { eventId: event.id, name: name.trim(), phone: phone.trim(), checkInCode, qrToken },
-          select: { id: true, qrToken: true }
-        });
-        const updatedOwner = await tx.user.update({
-          where: { id: owner.createdById },
-          data: { attendeeCredits: { decrement: 1 } },
-          select: { attendeeCredits: true }
-        });
-        await tx.creditTransaction.create({
-          data: {
+    // 公開報名依人頭扣 1 點（無攜伴，capacity 固定 1），由主辦錢包支付，受 -3 點下限約束。
+    // 點數不足時只告訴來賓「目前無法報名」，不暴露主辦的餘額或帳務資訊。
+    let attendee;
+    try {
+      attendee = await createAttendeeWithUniqueCode((checkInCode) =>
+        prisma.$transaction(async (tx) => {
+          const created = await tx.attendee.create({
+            data: { eventId: event.id, name: name.trim(), phone: phone.trim(), checkInCode, qrToken },
+            select: { id: true, qrToken: true }
+          });
+          await chargeWallet(tx, {
             userId: owner.createdById,
-            amount: -1,
+            amount: 1,
             reason: "ATTENDEE_CREATE",
-            balanceAfter: updatedOwner.attendeeCredits,
             eventId: event.id,
             attendeeId: created.id,
             note: "公開報名"
-          }
-        });
-        return created;
-      })
-    );
+          });
+          return created;
+        })
+      );
+    } catch (err) {
+      if (err instanceof AppError && err.code === "INSUFFICIENT_ATTENDEE_CREDITS") {
+        throw new AppError(409, "REGISTRATION_UNAVAILABLE", "目前無法完成報名，請聯絡主辦單位");
+      }
+      throw err;
+    }
 
     return ok(res, { qrToken: attendee.qrToken }, 201);
   })

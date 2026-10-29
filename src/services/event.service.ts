@@ -1,6 +1,7 @@
 import { createSlug } from "@monmate/utils";
 import { AppError } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
+import { chargeWallet } from "./credit-wallet.service.js";
 import { eventRepository } from "../repositories/event.repository.js";
 
 // Premium features an event can unlock once, paid out of the user's
@@ -171,27 +172,7 @@ export const eventService = {
     }
 
     const updated = await prisma.$transaction(async (tx) => {
-      const user = await tx.user.findUnique({ where: { id: userId }, select: { attendeeCredits: true } });
-      if (!user) throw new AppError(404, "USER_NOT_FOUND", "找不到使用者");
-      if (user.attendeeCredits < cost) {
-        throw new AppError(
-          402,
-          "INSUFFICIENT_ATTENDEE_CREDITS",
-          `解鎖需要 ${cost} 點，目前剩餘 ${user.attendeeCredits} 點，請購買點數。`
-        );
-      }
-
-      await tx.user.update({ where: { id: userId }, data: { attendeeCredits: { decrement: cost } } });
-      await tx.creditTransaction.create({
-        data: {
-          userId,
-          amount: -cost,
-          reason: "FEATURE_UNLOCK",
-          balanceAfter: user.attendeeCredits - cost,
-          eventId,
-          note: feature
-        }
-      });
+      await chargeWallet(tx, { userId, amount: cost, reason: "FEATURE_UNLOCK", eventId, note: feature });
 
       return tx.event.update({
         where: { id: eventId },

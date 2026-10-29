@@ -75,6 +75,7 @@ model User {
   events          Event[]   @relation("EventCreator")
   payments        Payment[]
   creditTransactions CreditTransaction[]
+  importSessions  ImportSession[]
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 }
@@ -101,6 +102,7 @@ model Event {
   createdById          String
   createdBy            User         @relation("EventCreator", fields: [createdById], references: [id])
   attendees            Attendee[]
+  importSessions       ImportSession[]
   checkInLogs          CheckInLog[]
   survey               Survey?
   staffMembers         User[]       @relation("EventStaff")
@@ -180,6 +182,7 @@ model Payment {
   providerOrderNo String?        @unique
   providerTradeNo String?        @unique
   checkoutUrl     String?
+  returnTo        String?
   consumedAt      DateTime?
   paidAt          DateTime?
   createdAt       DateTime       @default(now())
@@ -200,10 +203,12 @@ model CreditTransaction {
   eventId      String?
   attendeeId   String?
   paymentId    String?
+  importSessionId String?
   note         String?
   createdAt    DateTime                @default(now())
 
   @@index([userId, createdAt])
+  @@index([importSessionId])
 }
 
 model Survey {
@@ -239,4 +244,32 @@ model SurveyResponse {
 
   @@index([surveyId])
   @@index([attendeeId])
+}
+
+enum ImportSessionStatus {
+  PREVIEW
+  CONFIRMED
+}
+
+// 名單匯入的預覽／確認流程。PREVIEW 期間暫存解析後的名單（含個資），
+// 確認完成或逾期後會清空 rows，只保留結果摘要供使用者查詢匯入歷史。
+model ImportSession {
+  id          String              @id @default(cuid())
+  eventId     String
+  event       Event               @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fileName    String
+  fileHash    String
+  status      ImportSessionStatus @default(PREVIEW)
+  rows        Json
+  rowErrors   Json
+  decisions   Json                @default("{}")
+  result      Json?
+  expiresAt   DateTime
+  confirmedAt DateTime?
+  createdAt   DateTime            @default(now())
+
+  @@index([eventId, createdAt])
+  @@index([status, expiresAt])
 }

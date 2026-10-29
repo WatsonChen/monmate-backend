@@ -5,7 +5,8 @@ export class AppError extends Error {
   constructor(
     public readonly statusCode: number,
     public readonly code: string,
-    message: string
+    message: string,
+    public readonly details?: unknown
   ) {
     super(message);
   }
@@ -20,11 +21,12 @@ export function fail(
   res: Response,
   statusCode: number,
   code: string,
-  message: string
+  message: string,
+  details?: unknown
 ): Response {
   const body: ApiResponse<never> = {
     success: false,
-    error: { code, message }
+    error: details === undefined ? { code, message } : { code, message, details }
   };
   return res.status(statusCode).json(body);
 }
