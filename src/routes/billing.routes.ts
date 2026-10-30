@@ -9,7 +9,11 @@ export const billingRouter = Router();
 
 const checkoutSchema = z.object({
   tierId: z.string().min(1),
-  returnTo: z.string().optional()
+  returnTo: z.string().optional(),
+  // 購買前使用者是否勾選同意退款條款，以及同意的條款版本（日期）。目前為選填以相容舊版前端，
+  // 之後確認前端都已更新，可改為必填。
+  acceptedRefundTerms: z.boolean().optional(),
+  termsVersion: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()
 });
 
 billingRouter.post(
@@ -64,7 +68,8 @@ billingRouter.post(
     const session = await billingService.createCheckoutSession(
       req.user!.id,
       body.tierId,
-      body.returnTo
+      body.returnTo,
+      body.acceptedRefundTerms ? { version: body.termsVersion ?? null } : undefined
     );
     return ok(res, session, 201);
   })

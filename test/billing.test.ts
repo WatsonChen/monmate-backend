@@ -148,3 +148,30 @@ describe("付款後接續匯入", () => {
     expect(await prisma.creditTransaction.count({ where: { userId: owner.id, reason: "ATTENDEE_IMPORT" } })).toBe(1);
   });
 });
+
+describe("購買前同意退款條款的留存", () => {
+  it("勾選同意：記錄同意時間與條款版本", async () => {
+    const owner = await createOwner(0);
+    const before = Date.now();
+    const session = await billingService.createCheckoutSession(owner.id, "SMALL", undefined, { version: "2026-10-30" });
+    const payment = await prisma.payment.findUniqueOrThrow({ where: { id: session.paymentId } });
+    expect(payment.termsVersion).toBe("2026-10-30");
+    expect(payment.termsAcceptedAt!.getTime()).toBeGreaterThanOrEqual(before - 1000);
+  });
+
+  it("沒有同意資料（舊版前端）：照常建立付款，同意欄位為空", async () => {
+    const owner = await createOwner(0);
+    const session = await billingService.createCheckoutSession(owner.id, "SMALL");
+    const payment = await prisma.payment.findUniqueOrThrow({ where: { id: session.paymentId } });
+    expect(payment.termsAcceptedAt).toBeNull();
+    expect(payment.termsVersion).toBeNull();
+  });
+
+  it("同意但沒帶版本：仍記錄同意時間，版本為空", async () => {
+    const owner = await createOwner(0);
+    const session = await billingService.createCheckoutSession(owner.id, "SMALL", undefined, { version: null });
+    const payment = await prisma.payment.findUniqueOrThrow({ where: { id: session.paymentId } });
+    expect(payment.termsAcceptedAt).not.toBeNull();
+    expect(payment.termsVersion).toBeNull();
+  });
+});

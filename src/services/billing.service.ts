@@ -275,7 +275,12 @@ export const billingService = {
     };
   },
 
-  async createCheckoutSession(userId: string, tierId: string, returnToInput?: string) {
+  async createCheckoutSession(
+    userId: string,
+    tierId: string,
+    returnToInput?: string,
+    refundTermsConsent?: { version: string | null }
+  ) {
     const returnTo = sanitizeReturnTo(returnToInput);
     const config = requireNewebPayConfig();
     const tier = getPricingTier(tierId);
@@ -295,7 +300,9 @@ export const billingService = {
         attendeeLimit: tier.attendeeCredits,
         providerOrderNo: merchantOrderNo,
         checkoutUrl: config.apiUrl,
-        returnTo
+        returnTo,
+        // 只在使用者確實勾選同意時留存，時間以伺服器為準
+        ...(refundTermsConsent ? { termsAcceptedAt: new Date(), termsVersion: refundTermsConsent.version } : {})
       }
     });
 
