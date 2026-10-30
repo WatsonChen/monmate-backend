@@ -363,3 +363,35 @@ describe("取消匯入預覽（HTTP）", () => {
     expect(await prisma.importSession.count({ where: { id: session.id } })).toBe(0);
   });
 });
+
+describe("結帳時留存退款條款同意（HTTP）", () => {
+  it("勾選同意並帶版本：存下同意時間與版本；版本格式不對回 400 且不建立付款", async () => {
+    const owner = await createOwner(0);
+    const ok = await call("POST", "/billing/checkout-session", tokenFor(owner), {
+      tierId: "SMALL",
+      acceptedRefundTerms: true,
+      termsVersion: "2026-10-30"
+    });
+    expect(ok.status).toBe(201);
+    const payment = await prisma.payment.findUniqueOrThrow({ where: { id: ok.json.data.paymentId } });
+    expect(payment.termsVersion).toBe("2026-10-30");
+    expect(payment.termsAcceptedAt).not.toBeNull();
+
+    const before = await prisma.payment.count({ where: { userId: owner.id } });
+    const bad = await call("POST", "/billing/checkout-session", tokenFor(owner), {
+      tierId: "SMALL",
+      acceptedRefundTerms: true,
+      termsVersion: "not-a-date"
+    });
+    expect(bad.status).toBe(400);
+    expect(await prisma.payment.count({ where: { userId: owner.id } })).toBe(before);
+  });
+
+  it("舊版前端沒有帶同意欄位：仍可建立付款（同意欄位為空）", async () => {
+    const owner = await createOwner(0);
+    const res = await call("POST", "/billing/checkout-session", tokenFor(owner), { tierId: "SMALL" });
+    expect(res.status).toBe(201);
+    const payment = await prisma.payment.findUniqueOrThrow({ where: { id: res.json.data.paymentId } });
+    expect(payment.termsAcceptedAt).toBeNull();
+  });
+});

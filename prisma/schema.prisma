@@ -192,6 +192,9 @@ model Payment {
   providerTradeNo String?        @unique
   checkoutUrl     String?
   returnTo        String?
+  // 購買前使用者勾選同意退款條款的時間與版本（條款日期）；用來證明「購買前已明確同意」
+  termsAcceptedAt DateTime?
+  termsVersion    String?
   consumedAt      DateTime?
   paidAt          DateTime?
   createdAt       DateTime       @default(now())
