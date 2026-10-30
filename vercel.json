@@ -1,6 +1,6 @@
 {
-  "installCommand": "yarn install",
-  "buildCommand": "yarn vercel-build",
+  "installCommand": "npm ci",
+  "buildCommand": "npm run vercel-build",
   "functions": {
     "api/index.cjs": {
       "maxDuration": 30
