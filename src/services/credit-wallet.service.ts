@@ -1,4 +1,4 @@
-import { CREDIT_FLOOR } from "@monmate/types";
+import { CREDIT_FLOOR } from "../config/credit.js";
 import type { CreditTransactionReason, Prisma } from "@prisma/client";
 import { AppError } from "../lib/http.js";
 

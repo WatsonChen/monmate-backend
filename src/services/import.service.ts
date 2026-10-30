@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { CREDIT_FLOOR } from "@monmate/types";
+import { CREDIT_FLOOR } from "../config/credit.js";
 import { type Gender, ImportSessionStatus, Prisma } from "@prisma/client";
 import * as XLSX from "xlsx";
 import { AppError } from "../lib/http.js";

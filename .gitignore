@@ -6,3 +6,6 @@ api/index.js
 api/index.cjs
 .vercel
 .env*
+
+.emit
+.emit-test

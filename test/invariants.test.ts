@@ -1,6 +1,6 @@
 import { createCipheriv, createHash } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
-import { CREDIT_FLOOR } from "@monmate/types";
+import { CREDIT_FLOOR } from "../src/config/credit.js";
 import { prisma } from "../src/lib/prisma.js";
 import { attendeeService } from "../src/services/attendee.service.js";
 import { billingService } from "../src/services/billing.service.js";
