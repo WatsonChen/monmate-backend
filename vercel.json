@@ -1,11 +1,10 @@
 {
-  "installCommand": "npm ci",
+  "installCommand": "npm ci --include=dev",
   "buildCommand": "npm run vercel-build",
-  "functions": {
-    "api/index.cjs": {
-      "maxDuration": 30
+  "crons": [
+    {
+      "path": "/internal/cron/maintenance",
+      "schedule": "0 19 * * *"
     }
-  },
-  "crons": [{ "path": "/internal/cron/maintenance", "schedule": "0 19 * * *" }],
-  "rewrites": [{ "source": "/(.*)", "destination": "/api/index" }]
+  ]
 }
