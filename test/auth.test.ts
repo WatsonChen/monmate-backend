@@ -112,13 +112,17 @@ describe("工作人員 Email 與 Google 登入的綁定", () => {
     expect(result.user.attendeeCredits).toBe(0);
   });
 
-  it("已是主辦帳號的 Email 不能被設為工作人員（一個 Email 只有一種角色）", async () => {
+  it("已經是主辦的人也可以被指派為別場活動的工作人員（不需要密碼、不會改動原本的帳號）", async () => {
     const owner = await createOwner(10);
-    const other = await prisma.user.create({ data: { name: "另一位主辦", email: "organizer2@gmail.com", passwordHash: "x", role: "ADMIN" } });
+    const other = await prisma.user.create({
+      data: { name: "另一位主辦", email: "organizer2@gmail.com", passwordHash: "keep-me", role: "ADMIN" }
+    });
     const event = await createEvent(owner.id);
     const res = await addStaffViaApi(owner.id, owner.email, event.id, "ORGANIZER2@gmail.com");
-    expect(res.status).toBe(409);
-    expect(res.json.error.code).toBe("EMAIL_TAKEN");
-    expect(other.id).toBeTruthy();
+    expect(res.status).toBe(201);
+    expect(res.json.data.id).toBe(other.id);
+    const after = await prisma.user.findUniqueOrThrow({ where: { id: other.id } });
+    expect(after.role).toBe("ADMIN");
+    expect(after.passwordHash).toBe("keep-me");
   });
 });

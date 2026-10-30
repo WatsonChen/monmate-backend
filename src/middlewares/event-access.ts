@@ -22,29 +22,38 @@ async function isAssignedStaff(userId: string, eventId: string) {
   return user?.assignedEventId === eventId;
 }
 
+// 身分由「這個人與這場活動的關係」決定，而不是帳號的角色欄位：
+// 同一個帳號可以是 A 活動的工作人員、同時是 B 活動的主辦。
+
 // 只有活動建立者：改設定、刪除、解鎖、名單匯入匯出、問卷、通知、工作人員管理
 export function requireEventOwner(req: Request, _res: Response, next: NextFunction) {
   if (!req.user) return next(new AppError(401, "UNAUTHORIZED", "請先登入"));
   isEventOwner(req.user.id, req.params.eventId)
-    .then((owner) => next(owner ? undefined : notFound()))
+    .then((owner) => {
+      if (!owner) return next(notFound());
+      req.eventAccess = "OWNER";
+      return next();
+    })
     .catch(next);
 }
 
 // 活動建立者，或被指派到該活動的工作人員：報到、查名單、場地 QR
 export function requireEventAccess(req: Request, _res: Response, next: NextFunction) {
   if (!req.user) return next(new AppError(401, "UNAUTHORIZED", "請先登入"));
-  const { id, role } = req.user;
+  const { id } = req.user;
   const { eventId } = req.params;
 
-  const check = async () => {
-    if (role === "STAFF") {
-      if (await isAssignedStaff(id, eventId)) return true;
-      return false;
-    }
-    return (await isEventOwner(id, eventId)) === true;
+  const check = async (): Promise<"OWNER" | "STAFF" | null> => {
+    if ((await isEventOwner(id, eventId)) === true) return "OWNER";
+    if (await isAssignedStaff(id, eventId)) return "STAFF";
+    return null;
   };
 
   check()
-    .then((allowed) => next(allowed ? undefined : role === "STAFF" ? new AppError(403, "FORBIDDEN", "無法操作非指派活動") : notFound()))
+    .then((access) => {
+      if (!access) return next(notFound());
+      req.eventAccess = access;
+      return next();
+    })
     .catch(next);
 }

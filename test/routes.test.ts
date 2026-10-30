@@ -155,9 +155,9 @@ describe("工作人員權限", () => {
     const staff = await createStaff(other.id); // 只被指派到另一場
     const ts = tokenFor(staff, other.id);
 
-    expect((await call("GET", `/events/${event.id}`, ts)).status).toBe(403);
-    expect((await call("GET", `/events/${event.id}/attendees`, ts)).status).toBe(403);
-    expect((await call("POST", `/events/${event.id}/check-in/phone`, ts, { phone: "0911000111" })).status).toBe(403);
+    expect((await call("GET", `/events/${event.id}`, ts)).status).toBe(404);
+    expect((await call("GET", `/events/${event.id}/attendees`, ts)).status).toBe(404);
+    expect((await call("POST", `/events/${event.id}/check-in/phone`, ts, { phone: "0911000111" })).status).toBe(404);
   });
 });
 

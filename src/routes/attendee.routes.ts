@@ -179,8 +179,8 @@ attendeeRouter.patch(
       customFields: z.record(z.string(), z.union([z.string(), z.number()])).nullable().optional(),
       note: z.string().nullable().optional()
     }).parse(req.body);
-    // 工作人員只能編輯備註；其餘欄位（含人數、報到狀態）僅限主辦
-    if (req.user!.role === "STAFF") {
+    // 對這場活動而言只是工作人員（不是建立者）時，只能編輯備註；其餘欄位（含人數、報到狀態）僅限主辦
+    if (req.eventAccess !== "OWNER") {
       const forbidden = Object.keys(body).filter((k) => k !== "note");
       if (forbidden.length > 0) throw new AppError(403, "FORBIDDEN", "工作人員僅能編輯備註");
     }

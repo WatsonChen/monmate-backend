@@ -110,6 +110,9 @@ export const eventService = {
     // attendeeLimit is a capacity cap only — credits are billed per attendee
     // as they're actually added (see attendeeService.createSingle/importFromFile),
     // not reserved up front when the event is created.
+    // 帳號角色只決定登入後的預設落點；工作人員帳號開始自己辦活動後，改以主辦後台為預設
+    await prisma.user.updateMany({ where: { id: input.createdById, role: "STAFF" }, data: { role: "ADMIN" } });
+
     const event = await prisma.event.create({
       data: {
         name: input.name,

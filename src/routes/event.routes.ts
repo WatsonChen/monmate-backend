@@ -359,10 +359,12 @@ eventRouter.post(
 
 // Staff management
 
+// 表單送出的空字串視為沒填。已有帳號的人（無論目前是主辦或工作人員）只需要 Email；全新帳號才需要姓名與密碼
+const blankToUndefined = (v: unknown) => (typeof v === "string" && v.trim() === "" ? undefined : v);
 const createStaffSchema = z.object({
-  name: z.string().min(1),
+  name: z.preprocess(blankToUndefined, z.string().min(1).optional()),
   email: z.string().trim().email(),
-  password: z.string().min(6)
+  password: z.preprocess(blankToUndefined, z.string().min(6, "密碼至少 6 碼").optional())
 });
 
 eventRouter.get(
@@ -394,8 +396,13 @@ eventRouter.post(
     // Email 一律轉小寫並以不分大小寫比對，與 Google 登入回傳的 Email 對得起來
     const email = body.email.trim().toLowerCase();
     const existing = await userRepository.findByEmail(email);
-    if (existing && existing.role !== "STAFF") {
-      throw new AppError(409, "EMAIL_TAKEN", "此 Email 已是主辦帳號，無法設為工作人員");
+
+    const event = await prisma.event.findUnique({ where: { id: req.params.eventId }, select: { createdById: true } });
+    if (existing && event && existing.id === event.createdById) {
+      throw new AppError(409, "STAFF_IS_OWNER", "此 Email 是這場活動的主辦者，不需要設為工作人員");
+    }
+    if (!existing && (!body.name || !body.password)) {
+      throw new AppError(400, "STAFF_NEW_ACCOUNT_FIELDS", "這個 Email 還沒有帳號，請填寫姓名與密碼（至少 6 碼）");
     }
 
     const existingAssignment = existing
@@ -410,15 +417,16 @@ eventRouter.post(
     const staff = await prisma.$transaction(async (tx) => {
       const user = existing ?? await tx.user.create({
         data: {
-          name: body.name,
+          name: body.name!,
           email,
-          passwordHash: await bcrypt.hash(body.password, 10),
+          passwordHash: await bcrypt.hash(body.password!, 10),
           role: "STAFF",
           assignedEventId: req.params.eventId
         }
       });
 
-      if (existing && !existing.assignedEventId) {
+      // 只有純工作人員帳號才記「預設活動」；同時也是主辦的帳號不動
+      if (existing && existing.role === "STAFF" && !existing.assignedEventId) {
         await tx.user.update({
           where: { id: existing.id },
           data: { assignedEventId: req.params.eventId }

@@ -15,13 +15,12 @@ export const authService = {
       throw new AppError(401, "INVALID_CREDENTIALS", "帳號或密碼錯誤");
     }
 
-    const assignedEventIds = user.role === "STAFF"
-      ? await prisma.eventStaffAssignment.findMany({
-          where: { userId: user.id },
-          select: { eventId: true },
-          orderBy: { createdAt: "desc" }
-        })
-      : [];
+    // 任何帳號都可能被指派為某些活動的工作人員（同時也是其他活動的主辦）
+    const assignedEventIds = await prisma.eventStaffAssignment.findMany({
+      where: { userId: user.id },
+      select: { eventId: true },
+      orderBy: { createdAt: "desc" }
+    });
     const primaryAssignedEventId = user.assignedEventId ?? assignedEventIds[0]?.eventId ?? null;
 
     const signOptions: SignOptions = {
@@ -117,13 +116,12 @@ export const authService = {
       throw new AppError(404, "USER_NOT_FOUND", "找不到使用者");
     }
 
-    const assignedEventIds = user.role === "STAFF"
-      ? await prisma.eventStaffAssignment.findMany({
-          where: { userId: user.id },
-          select: { eventId: true },
-          orderBy: { createdAt: "desc" }
-        })
-      : [];
+    // 任何帳號都可能被指派為某些活動的工作人員（同時也是其他活動的主辦）
+    const assignedEventIds = await prisma.eventStaffAssignment.findMany({
+      where: { userId: user.id },
+      select: { eventId: true },
+      orderBy: { createdAt: "desc" }
+    });
     const primaryAssignedEventId = user.assignedEventId ?? assignedEventIds[0]?.eventId ?? null;
 
     return {
