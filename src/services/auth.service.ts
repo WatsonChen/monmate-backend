@@ -70,13 +70,17 @@ export const authService = {
     if (!googlePayload?.email) {
       throw new AppError(400, "GOOGLE_EMAIL_MISSING", "Google 帳號無法取得 email");
     }
+    // Email 必須是 Google 已驗證過的；否則別人可能用未驗證的 Email 冒用既有帳號（含工作人員帳號）
+    if (googlePayload.email_verified !== true) {
+      throw new AppError(401, "GOOGLE_EMAIL_UNVERIFIED", "此 Google 帳號的 Email 尚未驗證，無法登入");
+    }
 
     let user = await userRepository.findByEmail(googlePayload.email);
 
     if (!user) {
       user = await prisma.user.create({
         data: {
-          email: googlePayload.email,
+          email: googlePayload.email.trim().toLowerCase(),
           name: googlePayload.name ?? googlePayload.email.split("@")[0],
           passwordHash: "google-oauth"
         }

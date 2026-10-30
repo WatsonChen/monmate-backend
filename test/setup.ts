@@ -17,3 +17,5 @@ process.env.NODE_ENV = "test";
 process.env.NEWEBPAY_MERCHANT_ID = "MS_TEST_0001";
 process.env.NEWEBPAY_HASH_KEY = "k".repeat(32);
 process.env.NEWEBPAY_HASH_IV = "i".repeat(16);
+
+process.env.GOOGLE_CLIENT_ID = "test-google-client-id";

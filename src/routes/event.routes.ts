@@ -9,6 +9,7 @@ import { eventService, FEATURE_UNLOCK_COSTS, type FeatureUnlockKey } from "../se
 import { emailService } from "../services/email.service.js";
 import { getClientIp } from "../lib/client-ip.js";
 import { normalizeName, normalizePhone } from "../lib/identity.js";
+import { userRepository } from "../repositories/user.repository.js";
 import { abuseService } from "../services/abuse.service.js";
 import { turnstileService } from "../services/turnstile.service.js";
 import { chargeWallet } from "../services/credit-wallet.service.js";
@@ -360,7 +361,7 @@ eventRouter.post(
 
 const createStaffSchema = z.object({
   name: z.string().min(1),
-  email: z.string().email(),
+  email: z.string().trim().email(),
   password: z.string().min(6)
 });
 
@@ -390,7 +391,9 @@ eventRouter.post(
   requireEventOwner,
   asyncHandler(async (req, res) => {
     const body = createStaffSchema.parse(req.body);
-    const existing = await prisma.user.findUnique({ where: { email: body.email } });
+    // Email 一律轉小寫並以不分大小寫比對，與 Google 登入回傳的 Email 對得起來
+    const email = body.email.trim().toLowerCase();
+    const existing = await userRepository.findByEmail(email);
     if (existing && existing.role !== "STAFF") {
       throw new AppError(409, "EMAIL_TAKEN", "此 Email 已是主辦帳號，無法設為工作人員");
     }
@@ -408,7 +411,7 @@ eventRouter.post(
       const user = existing ?? await tx.user.create({
         data: {
           name: body.name,
-          email: body.email,
+          email,
           passwordHash: await bcrypt.hash(body.password, 10),
           role: "STAFF",
           assignedEventId: req.params.eventId
