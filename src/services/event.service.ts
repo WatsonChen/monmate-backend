@@ -1,6 +1,7 @@
 import { createSlug } from "@monmate/utils";
 import { AppError } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
+import { sanitizeEventContent } from "../lib/html.js";
 import { chargeWallet } from "./credit-wallet.service.js";
 import { eventRepository } from "../repositories/event.repository.js";
 
@@ -22,7 +23,7 @@ function toEventDTO(event: EventWithCounts) {
     name: event.name,
     slug: event.slug,
     description: event.description,
-    content: event.content,
+    content: sanitizeEventContent(event.content),
     startAt: event.startAt.toISOString(),
     endAt: event.endAt?.toISOString() ?? null,
     location: event.location,
@@ -71,7 +72,7 @@ export const eventService = {
       name: event.name,
       slug: event.slug,
       description: event.description,
-      content: event.content,
+      content: sanitizeEventContent(event.content),
       startAt: event.startAt.toISOString(),
       endAt: event.endAt?.toISOString() ?? null,
       location: event.location,
@@ -118,7 +119,7 @@ export const eventService = {
         name: input.name,
         slug,
         description: input.description,
-        content: input.content,
+        content: sanitizeEventContent(input.content) ?? undefined,
         startAt: new Date(input.startAt),
         endAt: input.endAt ? new Date(input.endAt) : undefined,
         location: input.location,
@@ -161,6 +162,8 @@ export const eventService = {
     await this.get(eventId);
     const event = await eventRepository.update(eventId, {
       ...input,
+      // 活動說明是 HTML，存檔前先淨化（undefined 表示不更新、null 表示清空）
+      ...(input.content !== undefined ? { content: sanitizeEventContent(input.content) } : {}),
       startAt: input.startAt ? new Date(input.startAt) : undefined,
       endAt: input.endAt === null ? null : input.endAt ? new Date(input.endAt) : undefined
     });

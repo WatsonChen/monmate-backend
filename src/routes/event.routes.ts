@@ -27,6 +27,8 @@ const registrationFieldSchema = z.array(z.object({
   required: z.boolean()
 }));
 
+const httpUrl = z.string().url().refine((v) => /^https?:\/\//i.test(v), "僅支援 http(s) 網址");
+
 const createEventSchema = z.object({
   name: z.string().min(1),
   slug: z.string().optional(),
@@ -35,8 +37,8 @@ const createEventSchema = z.object({
   startAt: z.string().min(1),
   endAt: z.string().optional(),
   location: z.string().optional(),
-  logoUrl: z.string().url().optional(),
-  coverImageUrl: z.string().url().optional(),
+  logoUrl: httpUrl.optional(),
+  coverImageUrl: httpUrl.optional(),
   attendeeLimit: z.number().int().positive().optional(),
   allowOverCapacity: z.boolean().optional(),
   registrationRequired: z.boolean().optional(),
@@ -50,8 +52,8 @@ const updateEventSchema = createEventSchema.partial().extend({
   content: z.string().nullable().optional(),
   endAt: z.string().nullable().optional(),
   location: z.string().nullable().optional(),
-  logoUrl: z.string().url().nullable().optional(),
-  coverImageUrl: z.string().url().nullable().optional()
+  logoUrl: httpUrl.nullable().optional(),
+  coverImageUrl: httpUrl.nullable().optional()
 });
 
 eventRouter.get(
