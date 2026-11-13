@@ -17,7 +17,9 @@ app.use(
 );
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true }));
-app.use(morgan("dev"));
+// 網址的查詢字串含有票券／問卷的 QR token，日誌只記路徑，不記查詢字串
+morgan.token("path-only", (req) => (req as express.Request).originalUrl.split("?")[0]);
+app.use(morgan(":method :path-only :status :response-time ms - :res[content-length]"));
 
 app.get("/health", (_req, res) => {
   res.json({ success: true, data: { status: "ok" } });

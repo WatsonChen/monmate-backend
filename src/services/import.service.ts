@@ -50,8 +50,21 @@ const nameKey = (name: string, phone: string) => `${normalizeName(name)}|${norma
 
 // ---------- 解析 ----------
 
+// 只接受 xlsx（ZIP）、舊版 xls（OLE）與純文字 CSV；其他 SheetJS 會自動辨識的冷門格式一律拒絕，縮小解析器的攻擊面
+function isSupportedImportContainer(buf: Buffer) {
+  if (buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04) return true;
+  if (buf.length >= 8 && buf.subarray(0, 8).equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]))) return true;
+  const head = buf.subarray(0, 8192);
+  if (head.includes(0)) return false;
+  const text = head.toString("utf8").trimStart().replace(/^\uFEFF/, "").trimStart();
+  return !/^(<|\{|ID;|DIF|TABLE|SYLK)/i.test(text);
+}
+
 export function parseImportFile(fileBuffer: Buffer) {
   let rows: unknown[][];
+  if (!isSupportedImportContainer(fileBuffer)) {
+    throw new AppError(400, "INVALID_FILE", "無法讀取檔案，請確認是 Excel 或 CSV 格式");
+  }
   try {
     // raw: CSV 內容保留原始文字，否則電話 0912… 會被當成數字而吃掉開頭的 0
     const workbook = XLSX.read(fileBuffer, { type: "buffer", cellText: false, cellDates: true, raw: true });

@@ -4,6 +4,7 @@ import { asyncHandler } from "../lib/async-handler.js";
 import { ok } from "../lib/http.js";
 import { requireAuth } from "../middlewares/auth.js";
 import { authService } from "../services/auth.service.js";
+import { getClientIp } from "../lib/client-ip.js";
 
 export const authRouter = Router();
 
@@ -16,7 +17,7 @@ authRouter.post(
   "/login",
   asyncHandler(async (req, res) => {
     const body = loginSchema.parse(req.body);
-    const result = await authService.login(body.email, body.password);
+    const result = await authService.login(body.email, body.password, getClientIp(req));
     return ok(res, result);
   })
 );

@@ -40,6 +40,10 @@ const envSchema = z.object({
 
 export const env = envSchema.parse(process.env);
 
+if (env.NODE_ENV === "production" && env.JWT_SECRET.length < 32) {
+  console.warn("[security] JWT_SECRET 少於 32 字元，建議換成至少 32 字元的隨機字串");
+}
+
 export const corsOrigins = env.CORS_ORIGIN.split(",").map((origin) =>
   origin.trim()
 );

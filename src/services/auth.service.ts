@@ -6,12 +6,35 @@ import { env } from "../config/env.js";
 import { AppError } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
 import { userRepository } from "../repositories/user.repository.js";
+import { hashIp } from "../lib/client-ip.js";
+import { hit, rateLimited } from "./rate-limit.service.js";
+import { createHash } from "node:crypto";
+
+// 密碼登入防暴力破解：同一個 email、同一個來源 IP 各自在視窗內的嘗試次數上限（不分成功失敗，
+// 正常使用者不會在 15 分鐘內登入超過 10 次）。IP 維度只在有設定可信 IP 標頭時才啟用。
+const LOGIN_WINDOW_SECONDS = 15 * 60;
+const LOGIN_MAX_PER_EMAIL = Number(process.env.LOGIN_MAX_PER_EMAIL) > 0 ? Number(process.env.LOGIN_MAX_PER_EMAIL) : 10;
+const LOGIN_MAX_PER_IP = Number(process.env.LOGIN_MAX_PER_IP) > 0 ? Number(process.env.LOGIN_MAX_PER_IP) : 60;
+
+// 帳號不存在、或是 Google 帳號（沒有密碼雜湊）時也跑一次 bcrypt，
+// 讓回應時間不會洩漏「這個 email 有沒有帳號」。
+const DUMMY_HASH = bcrypt.hashSync("monmate-dummy-password", 10);
+const looksLikeBcrypt = (h: string | undefined) => !!h && /^\$2[aby]\$\d{2}\$/.test(h);
 
 export const authService = {
-  async login(email: string, password: string) {
+  async assertLoginAllowed(email: string, ip: string | null) {
+    const emailKey = createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 32);
+    if ((await hit(`login:email:${emailKey}`, LOGIN_WINDOW_SECONDS)) > LOGIN_MAX_PER_EMAIL) throw rateLimited();
+    if (ip && (await hit(`login:ip:${hashIp(ip)}`, LOGIN_WINDOW_SECONDS)) > LOGIN_MAX_PER_IP) throw rateLimited();
+  },
+
+  async login(email: string, password: string, ip: string | null = null) {
+    await this.assertLoginAllowed(email, ip);
     const user = await userRepository.findByEmail(email);
 
-    if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
+    const hash = looksLikeBcrypt(user?.passwordHash) ? user!.passwordHash : DUMMY_HASH;
+    const passwordOk = await bcrypt.compare(password, hash);
+    if (!user || !looksLikeBcrypt(user.passwordHash) || !passwordOk) {
       throw new AppError(401, "INVALID_CREDENTIALS", "帳號或密碼錯誤");
     }
 
