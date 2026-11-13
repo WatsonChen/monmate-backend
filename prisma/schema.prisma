@@ -69,6 +69,8 @@ model User {
   passwordHash    String
   role            UserRole  @default(ADMIN)
   attendeeCredits Int       @default(0)
+  // 登入憑證版本：「登出所有裝置」時 +1，舊版本的 JWT 立刻失效
+  tokenVersion    Int       @default(0)
   assignedEventId String?
   assignedEvent   Event?    @relation("EventStaff", fields: [assignedEventId], references: [id], onDelete: SetNull)
   staffAssignments EventStaffAssignment[]

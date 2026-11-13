@@ -76,6 +76,16 @@ describe("名單匯入：只接受試算表與純文字", () => {
     expect(parseImportFile(Buffer.from("name,phone\nAlice,0912345678\n", "utf8")).rows).toHaveLength(1);
   });
 
+  it("中文標題的 CSV：UTF-8（有／無 BOM）與 Big5 都能讀，電話開頭的 0 保留", () => {
+    const text = "姓名,電話\n王小明,0912345678\n";
+    const big5 = Buffer.from("a96da6572cb971b8dc0aa4fda470a9fa2c303931323334353637380a", "hex");
+    for (const buf of [Buffer.from(text, "utf8"), Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(text, "utf8")]), big5]) {
+      const { rows } = parseImportFile(buf);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ name: "王小明", phone: "0912345678" });
+    }
+  });
+
   it("HTML、JSON、含二進位內容的檔案一律拒絕", () => {
     for (const buf of [Buffer.from("<html><table><tr><td>a</td></tr></table></html>"), Buffer.from('{"a":1}'), Buffer.from([0x00, 0x01, 0x02, 0x03, 0x04])]) {
       expect(() => parseImportFile(buf)).toThrow(/無法讀取檔案/);

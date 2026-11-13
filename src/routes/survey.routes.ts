@@ -66,7 +66,7 @@ surveyRouter.post(
     const body = z.object({
       surveyId: z.string(),
       attendeeId: z.string().optional(),
-      answers: z.record(z.unknown())
+      answers: z.record(z.string(), z.unknown())
     }).parse(req.body);
     const result = await surveyService.submitResponse(body.surveyId, body.attendeeId, body.answers);
     return ok(res, result);

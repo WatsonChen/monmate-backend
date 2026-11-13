@@ -60,6 +60,20 @@ function isSupportedImportContainer(buf: Buffer) {
   return !/^(<|\{|ID;|DIF|TABLE|SYLK)/i.test(text);
 }
 
+const isBinaryWorkbook = (buf: Buffer) =>
+  (buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b && buf[2] === 0x03 && buf[3] === 0x04) || // xlsx（ZIP）
+  (buf.length >= 8 && buf[0] === 0xd0 && buf[1] === 0xcf && buf[2] === 0x11 && buf[3] === 0xe0); // xls（OLE）
+
+// CSV 文字檔：先當 UTF-8（含或不含 BOM），不是合法 UTF-8 時當 Big5（台灣 Excel 另存「CSV（逗號分隔）」的預設編碼）。
+// 若直接交給 SheetJS 讀 Buffer，沒有 BOM 的中文標題會變成亂碼，導致找不到「姓名」「電話」欄位。
+function decodeCsvText(buf: Buffer): string {
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(buf).replace(/^\uFEFF/, "");
+  } catch {
+    return new TextDecoder("big5").decode(buf);
+  }
+}
+
 export function parseImportFile(fileBuffer: Buffer) {
   let rows: unknown[][];
   if (!isSupportedImportContainer(fileBuffer)) {
@@ -67,7 +81,10 @@ export function parseImportFile(fileBuffer: Buffer) {
   }
   try {
     // raw: CSV 內容保留原始文字，否則電話 0912… 會被當成數字而吃掉開頭的 0
-    const workbook = XLSX.read(fileBuffer, { type: "buffer", cellText: false, cellDates: true, raw: true });
+    const readOptions = { cellText: false, cellDates: true, raw: true } as const;
+    const workbook = isBinaryWorkbook(fileBuffer)
+      ? XLSX.read(fileBuffer, { type: "buffer", ...readOptions })
+      : XLSX.read(decodeCsvText(fileBuffer), { type: "string", ...readOptions });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 });
   } catch {

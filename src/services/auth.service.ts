@@ -52,7 +52,7 @@ export const authService = {
     };
 
     const token = jwt.sign(
-      { email: user.email, role: user.role, assignedEventId: primaryAssignedEventId },
+      { email: user.email, role: user.role, assignedEventId: primaryAssignedEventId, tv: user.tokenVersion },
       env.JWT_SECRET,
       signOptions
     );
@@ -115,7 +115,7 @@ export const authService = {
     };
 
     const token = jwt.sign(
-      { email: user.email, role: user.role },
+      { email: user.email, role: user.role, tv: user.tokenVersion },
       env.JWT_SECRET,
       signOptions
     );
@@ -130,6 +130,12 @@ export const authService = {
         attendeeCredits: user.attendeeCredits
       }
     };
+  },
+
+  // 登出所有裝置：憑證版本 +1，所有已發出的 JWT（含被偷走的）立刻失效，需要重新登入
+  async logoutAll(userId: string) {
+    await prisma.user.update({ where: { id: userId }, data: { tokenVersion: { increment: 1 } } });
+    return { loggedOut: true };
   },
 
   async me(userId: string) {

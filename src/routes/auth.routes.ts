@@ -35,6 +35,15 @@ authRouter.post("/logout", (_req, res) => {
   return ok(res, { loggedOut: true });
 });
 
+// 登出所有裝置（撤銷這個帳號所有已發出的登入憑證）；一般登出只是前端刪除本機憑證
+authRouter.post(
+  "/logout-all",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    return ok(res, await authService.logoutAll(req.user!.id));
+  })
+);
+
 authRouter.get(
   "/me",
   requireAuth,
