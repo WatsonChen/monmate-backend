@@ -80,4 +80,15 @@ describe("公開報名選填 Email：寄票券連結，方便弄丟時找回", (
     expect(retry.json.data.qrToken).toBe(first.json.data.qrToken);
     expect(send).toHaveBeenCalledTimes(1);
   });
+
+  it("活動已結束：公開報名被擋下，不建立報名、不寄信", async () => {
+    const send = vi.spyOn(emailService, "send").mockResolvedValue({ success: true, message: "ok" });
+    const owner = await createOwner(10);
+    const event = await createEvent(owner.id, { startAt: new Date(Date.now() - 3 * 86400000), endAt: new Date(Date.now() - 2 * 86400000) });
+    const r = await register(event.slug, { name: "小明", phone: "0912345678", email: "a@b.co" });
+    expect(r.status).toBe(403);
+    expect(r.json.error.code).toBe("EVENT_ENDED");
+    expect(send).not.toHaveBeenCalled();
+    expect(await prisma.attendee.count({ where: { eventId: event.id } })).toBe(0);
+  });
 });

@@ -1,3 +1,4 @@
+import { isEventEnded } from "../lib/event-time.js";
 import { createSlug } from "@monmate/utils";
 import { AppError } from "../lib/http.js";
 import { prisma } from "../lib/prisma.js";
@@ -37,6 +38,7 @@ function toEventDTO(event: EventWithCounts) {
     registrationFields: event.registrationFields as RegistrationField[],
     unlockedFeatures: event.unlockedFeatures,
     registrationPausedAt: event.publicRegistrationPausedAt?.toISOString() ?? null,
+    isEnded: isEventEnded(event),
     attendeeCount: event._count.attendees,
     checkInLogCount: event._count.checkInLogs,
     createdAt: event.createdAt.toISOString(),
@@ -84,7 +86,8 @@ export const eventService = {
       openRegistration: event.openRegistration,
       registrationFields: event.registrationFields as RegistrationField[],
       unlockedFeatures: event.unlockedFeatures,
-      registrationPaused: event.publicRegistrationPausedAt !== null
+      registrationPaused: event.publicRegistrationPausedAt !== null,
+      isEnded: isEventEnded(event)
     };
   },
 

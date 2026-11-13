@@ -98,6 +98,9 @@ eventRouter.post(
       throw new AppError(403, "REGISTRATION_CLOSED", "此活動未開放公開報名");
     }
 
+    // 活動結束後不再接受新的公開報名（已報名者的票券與查詢不受影響）
+    if (event.isEnded) throw new AppError(403, "EVENT_ENDED", "此活動已結束，無法再報名");
+
     const owner = await prisma.event.findUnique({
       where: { id: event.id },
       select: { createdById: true, publicRegistrationPausedAt: true }
