@@ -80,6 +80,8 @@ eventRouter.get(
 const publicRegisterSchema = z.object({
   name: z.string().min(1, "請填寫姓名").max(100),
   phone: z.string().min(6, "請填寫電話").max(30),
+  // 選填：填了就把票券連結寄到這個信箱，弄丟票券時可以找回
+  email: z.string().trim().email("Email 格式不正確").max(200).optional().or(z.literal("")),
   // 瀏覽器產生的隨機請求識別碼，僅用於「同一次送出」的重試防重
   requestId: z.string().regex(/^[A-Za-z0-9_-]{16,64}$/).optional(),
   // Cloudflare Turnstile 的一次性 token；僅在後端設定 TURNSTILE_SECRET_KEY 後才會被要求
@@ -89,7 +91,7 @@ const publicRegisterSchema = z.object({
 eventRouter.post(
   "/public/:slug/register",
   asyncHandler(async (req, res) => {
-    const { name, phone, requestId, turnstileToken } = publicRegisterSchema.parse(req.body);
+    const { name, phone, email, requestId, turnstileToken } = publicRegisterSchema.parse(req.body);
     const event = await eventService.getPublicBySlug(req.params.slug);
 
     if (!event.openRegistration) {
@@ -176,6 +178,7 @@ eventRouter.post(
               eventId: event.id,
               name: cleanName,
               phone: cleanPhone,
+              email: email ? email.toLowerCase() : undefined,
               checkInCode,
               qrToken,
               registrationKey: keyToStore
@@ -204,6 +207,23 @@ eventRouter.post(
     if (!outcome.replay) {
       // 觀察與告警不能影響報名結果
       await abuseService.afterSuccessfulRegistration({ eventId: event.id, ip }).catch((e) => console.error("[abuse]", e));
+    }
+
+    // 有留信箱就把票券連結寄過去（只在第一次成功時寄；寄信失敗不影響報名結果）。
+    // 在 serverless 環境回應送出後工作可能被中止，所以要等它完成。
+    if (!outcome.replay && email) {
+      const webUrl = env.WEB_APP_URL.replace(/\/$/, "");
+      await emailService
+        .send({
+          to: email.toLowerCase(),
+          attendeeName: cleanName,
+          eventName: event.name,
+          eventDate: new Date(event.startAt).toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" }),
+          eventPageUrl: `${webUrl}/event/${event.slug}`,
+          ticketUrl: `${webUrl}/event/${event.slug}/ticket?token=${outcome.qrToken}`,
+          template: "without-registration"
+        })
+        .catch((e) => console.error("[email]", e));
     }
 
     return ok(res, { qrToken: outcome.qrToken }, outcome.replay ? 200 : 201);
