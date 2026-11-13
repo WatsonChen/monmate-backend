@@ -30,7 +30,9 @@ describe("部署環境啟動檢查（編譯後不經打包直接用 Node 載入�
        });`
     );
     const url = process.env.DATABASE_URL!;
-    const stdout = execFileSync("node", [join(out, "boot.mjs")], {
+    // --no-experimental-require-module：Vercel 的執行環境不能用 require() 載入純 ESM 套件，
+    // 新版 Node 預設允許，會讓本機測試通過、上線卻啟動失敗（sanitize-html 2.18 + htmlparser2 12 就發生過）。
+    const stdout = execFileSync("node", ["--no-experimental-require-module", join(out, "boot.mjs")], {
       cwd: root,
       encoding: "utf8",
       env: { ...process.env, DATABASE_URL: url, DIRECT_URL: url, JWT_SECRET: "boot-check-secret-boot-check-secret" },
